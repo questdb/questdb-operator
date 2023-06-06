@@ -25,6 +25,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
+
+	batchv1 "k8s.io/api/batch/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // SnapshotScheduleReconciler reconciles a SnapshotSchedule object
@@ -36,20 +39,27 @@ type SnapshotScheduleReconciler struct {
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=snapshotschedules,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=snapshotschedules/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=snapshotschedules/finalizers,verbs=update
+//+kubebuilder:rbac:groups=batch,resources=snapshotschedules/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the SnapshotSchedule object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.14.1/pkg/reconcile
 func (r *SnapshotScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	var (
+		err error
 
-	// TODO(user): your logic here
+		sched  = &crdv1beta1.SnapshotSchedule{}
+		logger = log.FromContext(ctx)
+	)
+
+	err = r.Get(ctx, req.NamespacedName, sched)
+
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		} else {
+			return ctrl.Result{}, err
+		}
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -58,5 +68,6 @@ func (r *SnapshotScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 func (r *SnapshotScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&crdv1beta1.SnapshotSchedule{}).
+		Owns(&batchv1.CronJob{}).
 		Complete(r)
 }
