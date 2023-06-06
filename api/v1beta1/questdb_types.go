@@ -20,9 +20,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type QuestDBVolumeSpec struct {
+	PersistentVolumeName string `json:"persistentVolume,omitempty"`
+	VolumeSnapshotName   string `json:"volumeSnapshot,omitempty"`
+	StorageClassName     string `json:"storageClass,omitempty"`
+}
+
 // QuestDBSpec defines the desired state of QuestDB
 type QuestDBSpec struct {
-	Foo string `json:"foo,omitempty"`
+	Volume QuestDBVolumeSpec `json:"volume,omitempty"`
 }
 
 // QuestDBStatus defines the observed state of QuestDB

@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -33,19 +34,10 @@ const (
 	SnapshotSucceeded SnapshotPhase = "Succeeded"
 )
 
-type SnapshotStorage string
-
-const (
-	// SnapshotStorageS3 means the snapshot is stored in S3
-	SnapshotStorageS3 SnapshotStorage = "S3"
-	// SnapshotStorageEBS means the snapshot is stored in EBS
-	SnapshotStorageEBS SnapshotStorage = "EBS"
-)
-
 // SnapshotSpec defines the desired state of Snapshot
 type SnapshotSpec struct {
-	QuestDB string          `json:"questDB,omitempty"`
-	Storage SnapshotStorage `json:"storage,omitempty"`
+	QuestDB  string                              `json:"questDB,omitempty"`
+	Snapshot volumesnapshotv1.VolumeSnapshotSpec `json:"snapshot,omitempty"`
 }
 
 type SnapshotStatusS3 struct {

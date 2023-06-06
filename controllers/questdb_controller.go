@@ -25,6 +25,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
+
+	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/core/v1"
 )
 
 // QuestDBReconciler reconciles a QuestDB object
@@ -36,6 +39,10 @@ type QuestDBReconciler struct {
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbs/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbs/finalizers,verbs=update
+//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -58,5 +65,9 @@ func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 func (r *QuestDBReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&crdv1beta1.QuestDB{}).
+		Owns(&appsv1.StatefulSet{}).
+		Owns(&v1.PersistentVolumeClaim{}).
+		Owns(&v1.Service{}).
+		Owns(&v1.ConfigMap{}).
 		Complete(r)
 }

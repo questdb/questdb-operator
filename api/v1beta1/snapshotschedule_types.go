@@ -17,17 +17,18 @@ limitations under the License.
 package v1beta1
 
 import (
+	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // SnapshotScheduleSpec defines the desired state of SnapshotSchedule
 type SnapshotScheduleSpec struct {
-	Schedule string `json:"schedule"`
+	Schedule string                              `json:"schedule"`
+	Snapshot volumesnapshotv1.VolumeSnapshotSpec `json:"snapshot,omitempty"`
 }
 
 // SnapshotScheduleStatus defines the observed state of SnapshotSchedule
 type SnapshotScheduleStatus struct {
-	Phase string `json:"phase"`
 }
 
 //+kubebuilder:object:root=true

@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 )
 
@@ -49,7 +50,7 @@ type SnapshotReconciler struct {
 func (r *SnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 
-	// TODO(user): your logic here
+	// todo: Reconcile the VolumeSnapshot objects
 
 	return ctrl.Result{}, nil
 }
@@ -58,5 +59,6 @@ func (r *SnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 func (r *SnapshotReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&crdv1beta1.Snapshot{}).
+		Owns(&volumesnapshotv1.VolumeSnapshot{}).
 		Complete(r)
 }
