@@ -1,0 +1,12 @@
+apiVersion: crd.questdb.io/v1beta1
+kind: SnapshotSchedule
+metadata:
+  labels:
+    app.kubernetes.io/name: snapshotschedule
+    app.kubernetes.io/instance: snapshotschedule-sample
+    app.kubernetes.io/part-of: questdb-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: questdb-operator
+  name: snapshotschedule-sample
+spec:
+  # TODO(user): Add fields here

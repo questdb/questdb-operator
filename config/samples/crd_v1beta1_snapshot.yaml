@@ -1,0 +1,12 @@
+apiVersion: crd.questdb.io/v1beta1
+kind: Snapshot
+metadata:
+  labels:
+    app.kubernetes.io/name: snapshot
+    app.kubernetes.io/instance: snapshot-sample
+    app.kubernetes.io/part-of: questdb-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: questdb-operator
+  name: snapshot-sample
+spec:
+  # TODO(user): Add fields here

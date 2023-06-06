@@ -1,0 +1,12 @@
+apiVersion: crd.questdb.io/v1beta1
+kind: RestoreJob
+metadata:
+  labels:
+    app.kubernetes.io/name: restorejob
+    app.kubernetes.io/instance: restorejob-sample
+    app.kubernetes.io/part-of: questdb-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: questdb-operator
+  name: restorejob-sample
+spec:
+  # TODO(user): Add fields here
