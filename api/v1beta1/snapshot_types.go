@@ -28,6 +28,8 @@ const (
 	SnapshotPending SnapshotPhase = "Pending"
 	// SnapshotRunning means the snapshot is running
 	SnapshotRunning SnapshotPhase = "Running"
+	// SnapshotCleaning means the snapshot is cleaning up
+	SnapshotCleaning SnapshotPhase = "Cleaning"
 	// SnapshotFailed means the snapshot has failed
 	SnapshotFailed SnapshotPhase = "Failed"
 	// SnapshotSucceeded means the snapshot has succeeded
