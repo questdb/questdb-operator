@@ -49,17 +49,85 @@ type QuestDBReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the QuestDB object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.14.1/pkg/reconcile
 func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 
-	// TODO(user): your logic here
+	var (
+		err error
+
+		q = &crdv1beta1.QuestDB{}
+	)
+
+	// Try to get the object we are reconciling.  Exit if it does not exist
+	if err = r.Get(ctx, req.NamespacedName, q); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	// Reconcile the ConfigMap
+	cm := buildConfigMap(q)
+	if err = ctrl.SetControllerReference(q, &cm, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err = r.Get(ctx, req.NamespacedName, &cm); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
+
+		if err = r.Create(ctx, &cm); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// todo: handle updates to the configmap???
+
+	// Reconcile the PVC
+	pvc := buildPvc(q)
+	if err = ctrl.SetControllerReference(q, &pvc, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err = r.Get(ctx, req.NamespacedName, &pvc); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
+
+		if err = r.Create(ctx, &pvc); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Reconcile the StatefulSet
+	sts := buildStatefulSet(q)
+	if err = ctrl.SetControllerReference(q, &sts, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err = r.Get(ctx, req.NamespacedName, &sts); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
+
+		if err = r.Create(ctx, &sts); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Reconcile the Service
+	svc := buildService(q)
+	if err = ctrl.SetControllerReference(q, &svc, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err = r.Get(ctx, req.NamespacedName, &svc); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
+
+		if err = r.Create(ctx, &svc); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -77,16 +145,24 @@ func (r *QuestDBReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func buildStatefulSet(q *crdv1beta1.QuestDB) appsv1.StatefulSet {
 	return appsv1.StatefulSet{
-		ObjectMeta: q.ObjectMeta,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        q.Name,
+			Namespace:   q.Namespace,
+			Labels:      q.Labels,
+			Annotations: q.Annotations,
+		},
 		Spec: appsv1.StatefulSetSpec{
 			ServiceName: q.Name,
 			Replicas:    pointer.Int32(1),
 			Selector: &metav1.LabelSelector{
-				MatchLabels: q.ObjectMeta.Labels,
+				MatchLabels: q.Labels,
 			},
 			Template: v1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: q.ObjectMeta.Labels,
+					Name:        q.Name,
+					Namespace:   q.Namespace,
+					Labels:      q.Labels,
+					Annotations: q.Annotations,
 				},
 				Spec: v1.PodSpec{
 					Affinity: q.Spec.Affinity,
@@ -115,7 +191,10 @@ func buildStatefulSet(q *crdv1beta1.QuestDB) appsv1.StatefulSet {
 									ContainerPort: 9003,
 								},
 							},
-							Resources: q.Spec.Resources,
+							Resources: v1.ResourceRequirements{
+								Limits:   q.Spec.Resources.Limits,
+								Requests: q.Spec.Resources.Requests,
+							},
 							LivenessProbe: &v1.Probe{
 								FailureThreshold:    5,
 								InitialDelaySeconds: 5,
@@ -190,7 +269,12 @@ func buildStatefulSet(q *crdv1beta1.QuestDB) appsv1.StatefulSet {
 
 func buildService(q *crdv1beta1.QuestDB) v1.Service {
 	return v1.Service{
-		ObjectMeta: q.ObjectMeta,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        q.Name,
+			Namespace:   q.Namespace,
+			Labels:      q.Labels,
+			Annotations: q.Annotations,
+		},
 		Spec: v1.ServiceSpec{
 			Ports: []v1.ServicePort{
 				{
@@ -217,7 +301,12 @@ func buildService(q *crdv1beta1.QuestDB) v1.Service {
 
 func buildPvc(q *crdv1beta1.QuestDB) v1.PersistentVolumeClaim {
 	pvc := v1.PersistentVolumeClaim{
-		ObjectMeta: q.ObjectMeta,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        q.Name,
+			Namespace:   q.Namespace,
+			Labels:      q.Labels,
+			Annotations: q.Annotations,
+		},
 		Spec: v1.PersistentVolumeClaimSpec{
 			AccessModes: []v1.PersistentVolumeAccessMode{
 				v1.ReadWriteOnce,
@@ -227,10 +316,6 @@ func buildPvc(q *crdv1beta1.QuestDB) v1.PersistentVolumeClaim {
 
 	if q.Spec.Volume.StorageClassName != nil {
 		pvc.Spec.StorageClassName = q.Spec.Volume.StorageClassName
-	}
-
-	if q.Spec.Volume.Resources != nil {
-		pvc.Spec.Resources = *q.Spec.Volume.Resources
 	}
 
 	if q.Spec.Volume.VolumeName != "" {
@@ -247,6 +332,10 @@ func buildPvc(q *crdv1beta1.QuestDB) v1.PersistentVolumeClaim {
 			Kind:     "VolumeSnapshot",
 			Name:     q.Spec.Volume.SnapshotName,
 		}
+	} else {
+		pvc.Spec.Resources.Requests = v1.ResourceList{
+			v1.ResourceStorage: q.Spec.Volume.Size,
+		}
 	}
 
 	return pvc
@@ -257,7 +346,12 @@ func buildConfigMap(q *crdv1beta1.QuestDB) v1.ConfigMap {
 	// todo: Run some validation on the config
 	// todo: Probably move credentials to a secret
 	return v1.ConfigMap{
-		ObjectMeta: q.ObjectMeta,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        q.Name,
+			Namespace:   q.Namespace,
+			Labels:      q.Labels,
+			Annotations: q.Annotations,
+		},
 		Data: map[string]string{
 			"questdb.conf": q.Spec.Config.DbConfig,
 			"log.conf":     q.Spec.Config.LogConfig,

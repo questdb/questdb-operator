@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 	"github.com/questdb/questdb-operator/controllers"
 	//+kubebuilder:scaffold:imports
@@ -43,6 +44,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(volumesnapshotv1.AddToScheme(scheme))
 
 	utilruntime.Must(crdv1beta1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme

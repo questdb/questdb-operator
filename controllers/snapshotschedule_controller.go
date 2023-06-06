@@ -82,13 +82,23 @@ func (r *SnapshotScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func buildCronJob(sched *crdv1beta1.SnapshotSchedule) batchv1.CronJob {
 	return batchv1.CronJob{
-		ObjectMeta: sched.ObjectMeta,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        sched.Name,
+			Namespace:   sched.Namespace,
+			Labels:      sched.Labels,
+			Annotations: sched.Annotations,
+		},
 		Spec: batchv1.CronJobSpec{
 			Schedule: sched.Spec.Schedule,
 			JobTemplate: batchv1.JobTemplateSpec{
 				Spec: batchv1.JobSpec{
 					Template: v1.PodTemplateSpec{
-						ObjectMeta: sched.ObjectMeta,
+						ObjectMeta: metav1.ObjectMeta{
+							Name:        sched.Name,
+							Namespace:   sched.Namespace,
+							Labels:      sched.Labels,
+							Annotations: sched.Annotations,
+						},
 						Spec: v1.PodSpec{
 							Containers: []v1.Container{
 								{
@@ -142,7 +152,12 @@ func buildSnapshotConfigMap(sched *crdv1beta1.SnapshotSchedule) (v1.ConfigMap, e
 	}
 
 	return v1.ConfigMap{
-		ObjectMeta: sched.ObjectMeta,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        sched.Name,
+			Namespace:   sched.Namespace,
+			Labels:      sched.Labels,
+			Annotations: sched.Annotations,
+		},
 		Data: map[string]string{
 			"snapshot.yaml": string(data),
 		},

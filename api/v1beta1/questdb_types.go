@@ -18,15 +18,21 @@ package v1beta1
 
 import (
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type QuestDBResourcesSpec struct {
+	Limits   v1.ResourceList `json:"limits,omitempty"`
+	Requests v1.ResourceList `json:"requests,omitempty"`
+}
+
 type QuestDBVolumeSpec struct {
-	Selector         *metav1.LabelSelector    `json:"selector,omitempty"`
-	Resources        *v1.ResourceRequirements `json:"resources,omitempty"`
-	VolumeName       string                   `json:"volumeName,omitempty"`
-	StorageClassName *string                  `json:"storageClassName,omitempty"`
-	SnapshotName     string                   `json:"snapshotName,omitempty"`
+	Selector         *metav1.LabelSelector `json:"selector,omitempty"`
+	Size             resource.Quantity     `json:"size,omitempty"`
+	VolumeName       string                `json:"volumeName,omitempty"`
+	StorageClassName *string               `json:"storageClassName,omitempty"`
+	SnapshotName     string                `json:"snapshotName,omitempty"`
 }
 
 type QuestDBConfigSpec struct {
@@ -37,7 +43,7 @@ type QuestDBConfigSpec struct {
 // QuestDBSpec defines the desired state of QuestDB
 type QuestDBSpec struct {
 	Volume QuestDBVolumeSpec `json:"volume"`
-	Config QuestDBConfigSpec `json:"config"`
+	Config QuestDBConfigSpec `json:"config,omitempty"` // todo: remote omitempty
 
 	Image string `json:"image"`
 
@@ -46,7 +52,7 @@ type QuestDBSpec struct {
 	ImagePullPolicy  v1.PullPolicy             `json:"imagePullPolicy,omitempty"`
 	ImagePullSecrets []v1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
 	NodeSelector     map[string]string         `json:"nodeSelector,omitempty"`
-	Resources        v1.ResourceRequirements   `json:"resources,omitempty"`
+	Resources        QuestDBResourcesSpec      `json:"resources,omitempty"`
 	Tolerations      []v1.Toleration           `json:"tolerations,omitempty"`
 
 	// todo: Add pod spec-y things here like imagepullsecrets, resource requests, etc.

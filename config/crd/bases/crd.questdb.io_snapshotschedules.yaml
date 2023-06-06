@@ -1,0 +1,90 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.1
+  creationTimestamp: null
+  name: snapshotschedules.crd.questdb.io
+spec:
+  group: crd.questdb.io
+  names:
+    kind: SnapshotSchedule
+    listKind: SnapshotScheduleList
+    plural: snapshotschedules
+    singular: snapshotschedule
+  scope: Namespaced
+  versions:
+  - name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: SnapshotSchedule is the Schema for the snapshotschedules API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: SnapshotScheduleSpec defines the desired state of SnapshotSchedule
+            properties:
+              schedule:
+                type: string
+              snapshot:
+                description: VolumeSnapshotSpec describes the common attributes of
+                  a volume snapshot.
+                properties:
+                  source:
+                    description: source specifies where a snapshot will be created
+                      from. This field is immutable after creation. Required.
+                    properties:
+                      persistentVolumeClaimName:
+                        description: persistentVolumeClaimName specifies the name
+                          of the PersistentVolumeClaim object representing the volume
+                          from which a snapshot should be created. This PVC is assumed
+                          to be in the same namespace as the VolumeSnapshot object.
+                          This field should be set if the snapshot does not exists,
+                          and needs to be created. This field is immutable.
+                        type: string
+                      volumeSnapshotContentName:
+                        description: volumeSnapshotContentName specifies the name
+                          of a pre-existing VolumeSnapshotContent object representing
+                          an existing volume snapshot. This field should be set if
+                          the snapshot already exists and only needs a representation
+                          in Kubernetes. This field is immutable.
+                        type: string
+                    type: object
+                  volumeSnapshotClassName:
+                    description: 'VolumeSnapshotClassName is the name of the VolumeSnapshotClass
+                      requested by the VolumeSnapshot. VolumeSnapshotClassName may
+                      be left nil to indicate that the default SnapshotClass should
+                      be used. A given cluster may have multiple default Volume SnapshotClasses:
+                      one default per CSI Driver. If a VolumeSnapshot does not specify
+                      a SnapshotClass, VolumeSnapshotSource will be checked to figure
+                      out what the associated CSI Driver is, and the default VolumeSnapshotClass
+                      associated with that CSI Driver will be used. If more than one
+                      VolumeSnapshotClass exist for a given CSI Driver and more than
+                      one have been marked as default, CreateSnapshot will fail and
+                      generate an event. Empty string is not allowed for this field.'
+                    type: string
+                required:
+                - source
+                type: object
+            required:
+            - schedule
+            type: object
+          status:
+            description: SnapshotScheduleStatus defines the observed state of SnapshotSchedule
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
