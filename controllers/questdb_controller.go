@@ -331,15 +331,15 @@ func (r *QuestDBReconciler) buildPvc(q *crdv1beta1.QuestDB) (v1.PersistentVolume
 		pvc.Spec.Selector = q.Spec.Volume.Selector
 	}
 
+	pvc.Spec.Resources.Requests = v1.ResourceList{
+		v1.ResourceStorage: q.Spec.Volume.Size,
+	}
+
 	if q.Spec.Volume.SnapshotName != "" {
 		pvc.Spec.DataSource = &v1.TypedLocalObjectReference{
 			APIGroup: pointer.String("snapshot.storage.k8s.io"),
 			Kind:     "VolumeSnapshot",
 			Name:     q.Spec.Volume.SnapshotName,
-		}
-	} else {
-		pvc.Spec.Resources.Requests = v1.ResourceList{
-			v1.ResourceStorage: q.Spec.Volume.Size,
 		}
 	}
 
