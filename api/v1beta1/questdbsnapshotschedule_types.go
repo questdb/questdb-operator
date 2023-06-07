@@ -21,38 +21,34 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// SnapshotScheduleSpec defines the desired state of QuestDBSnapshotSchedule
-type SnapshotScheduleSpec struct {
+// QuestDBSnapshotScheduleSpec defines the desired state of QuestDBSnapshotSchedule
+type QuestDBSnapshotScheduleSpec struct {
 	Schedule           string                              `json:"schedule"`
 	Snapshot           volumesnapshotv1.VolumeSnapshotSpec `json:"snapshot,omitempty"`
 	ServiceAccountName string                              `json:"serviceAccountName"`
 }
 
-// SnapshotScheduleStatus defines the observed state of QuestDBSnapshotSchedule
-type SnapshotScheduleStatus struct {
-}
-
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:resource:shortName=qdbsched;qdbscheds
 
 // QuestDBSnapshotSchedule is the Schema for the snapshotschedules API
 type QuestDBSnapshotSchedule struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   SnapshotScheduleSpec   `json:"spec,omitempty"`
-	Status SnapshotScheduleStatus `json:"status,omitempty"`
+	Spec QuestDBSnapshotScheduleSpec `json:"spec,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 
-// SnapshotScheduleList contains a list of QuestDBSnapshotSchedule
-type SnapshotScheduleList struct {
+// QuestDBSnapshotScheduleList contains a list of QuestDBSnapshotSchedule
+type QuestDBSnapshotScheduleList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []QuestDBSnapshotSchedule `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&QuestDBSnapshotSchedule{}, &SnapshotScheduleList{})
+	SchemeBuilder.Register(&QuestDBSnapshotSchedule{}, &QuestDBSnapshotScheduleList{})
 }

@@ -45,7 +45,7 @@ type QuestDBSnapshotReconciler struct {
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbsnapshots,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbsnapshots/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbsnapshots/finalizers,verbs=update
-//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=questdbsnapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -118,16 +118,16 @@ func (r *QuestDBSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 		// Check if the snapshot job is complete
 		if volumeSnap.Status != nil && volumeSnap.Status.ReadyToUse != nil && *volumeSnap.Status.ReadyToUse {
-			// Set the phase to cleaning
-			snap.Status.Phase = crdv1beta1.SnapshotCleaning
+			// Set the phase to finalizing
+			snap.Status.Phase = crdv1beta1.SnapshotFinalizing
 			if err = r.Status().Update(ctx, snap); err != nil {
 				return ctrl.Result{}, err
 			}
-			r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotCleaning", "Snapshot %s is cleaning", snap.Name)
+			r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotFinalizing", "Snapshot %s is cleaning", snap.Name)
 			return ctrl.Result{}, nil
 		}
 
-	case crdv1beta1.SnapshotCleaning:
+	case crdv1beta1.SnapshotFinalizing:
 		// Create the pre-snapshot job
 		job, err := r.buildPostSnapshotJob(snap)
 		if err != nil {

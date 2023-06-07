@@ -27,22 +27,22 @@ const (
 	SnapshotPending QuestDBSnapshotPhase = "Pending"
 	// SnapshotRunning means the snapshot is running
 	SnapshotRunning QuestDBSnapshotPhase = "Running"
-	// SnapshotCleaning means the snapshot is cleaning up
-	SnapshotCleaning QuestDBSnapshotPhase = "Cleaning"
+	// SnapshotFinalizing means the snapshot is finalizing
+	SnapshotFinalizing QuestDBSnapshotPhase = "Finalizing"
 	// SnapshotFailed means the snapshot has failed
 	SnapshotFailed QuestDBSnapshotPhase = "Failed"
 	// SnapshotSucceeded means the snapshot has succeeded
 	SnapshotSucceeded QuestDBSnapshotPhase = "Succeeded"
 )
 
-// SnapshotSpec defines the desired state of QuestDBSnapshot
-type SnapshotSpec struct {
+// QuestDBSnapshotSpec defines the desired state of QuestDBSnapshot
+type QuestDBSnapshotSpec struct {
 	QuestDB             string `json:"questdb"`
 	VolumeSnapshotClass string `json:"volumeSnapshotClass"`
 }
 
-// SnapshotStatus defines the observed state of QuestDBSnapshot
-type SnapshotStatus struct {
+// QuestDBSnapshotStatus defines the observed state of QuestDBSnapshot
+type QuestDBSnapshotStatus struct {
 	Phase            QuestDBSnapshotPhase `json:"phase,omitempty"`
 	SnapshotStarted  metav1.Time          `json:"snapshotStarted,omitempty"`
 	SnapshotFinished metav1.Time          `json:"snapshotFinished,omitempty"`
@@ -50,25 +50,27 @@ type SnapshotStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:resource:shortName=qdbsnap;qdbsnaps
+//+kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 
 // QuestDBSnapshot is the Schema for the snapshots API
 type QuestDBSnapshot struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   SnapshotSpec   `json:"spec,omitempty"`
-	Status SnapshotStatus `json:"status,omitempty"`
+	Spec   QuestDBSnapshotSpec   `json:"spec,omitempty"`
+	Status QuestDBSnapshotStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 
-// SnapshotList contains a list of QuestDBSnapshot
-type SnapshotList struct {
+// QuestDBSnapshotList contains a list of QuestDBSnapshot
+type QuestDBSnapshotList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []QuestDBSnapshot `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&QuestDBSnapshot{}, &SnapshotList{})
+	SchemeBuilder.Register(&QuestDBSnapshot{}, &QuestDBSnapshotList{})
 }

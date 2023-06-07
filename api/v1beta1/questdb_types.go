@@ -71,6 +71,7 @@ type QuestDBStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:resource:shortName=qdb;qdbs
 
 // QuestDB is the Schema for the questdbs API
 type QuestDB struct {

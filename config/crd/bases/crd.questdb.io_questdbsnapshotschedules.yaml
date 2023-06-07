@@ -10,7 +10,7 @@ spec:
   group: crd.questdb.io
   names:
     kind: QuestDBSnapshotSchedule
-    listKind: SnapshotScheduleList
+    listKind: QuestDBSnapshotScheduleList
     plural: questdbsnapshotschedules
     singular: questdbsnapshotschedule
   scope: Namespaced
@@ -18,7 +18,8 @@ spec:
   - name: v1beta1
     schema:
       openAPIV3Schema:
-        description: QuestDBSnapshotSchedule is the Schema for the questdbsnapshotschedules API
+        description: QuestDBSnapshotSchedule is the Schema for the snapshotschedules
+          API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -33,7 +34,8 @@ spec:
           metadata:
             type: object
           spec:
-            description: SnapshotScheduleSpec defines the desired state of QuestDBSnapshotSchedule
+            description: QuestDBSnapshotScheduleSpec defines the desired state of
+              QuestDBSnapshotSchedule
             properties:
               schedule:
                 type: string
@@ -82,9 +84,6 @@ spec:
             required:
             - schedule
             - serviceAccountName
-            type: object
-          status:
-            description: SnapshotScheduleStatus defines the observed state of QuestDBSnapshotSchedule
             type: object
         type: object
     served: true
