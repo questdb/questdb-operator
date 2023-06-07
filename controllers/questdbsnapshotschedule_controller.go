@@ -36,15 +36,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// SnapshotScheduleReconciler reconciles a SnapshotSchedule object
+// SnapshotScheduleReconciler reconciles a QuestDBSnapshotSchedule object
 type SnapshotScheduleReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=crd.questdb.io,resources=snapshotschedules,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=crd.questdb.io,resources=snapshotschedules/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=crd.questdb.io,resources=snapshotschedules/finalizers,verbs=update
+//+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbsnapshotschedules,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbsnapshotschedules/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbsnapshotschedules/finalizers,verbs=update
 //+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 
@@ -54,7 +54,7 @@ func (r *SnapshotScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	var (
 		err error
 
-		sched = &crdv1beta1.SnapshotSchedule{}
+		sched = &crdv1beta1.QuestDBSnapshotSchedule{}
 		_     = log.FromContext(ctx)
 	)
 
@@ -74,13 +74,13 @@ func (r *SnapshotScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 // SetupWithManager sets up the controller with the Manager.
 func (r *SnapshotScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&crdv1beta1.SnapshotSchedule{}).
+		For(&crdv1beta1.QuestDBSnapshotSchedule{}).
 		Owns(&batchv1.CronJob{}).
 		Owns(&v1.ConfigMap{}).
 		Complete(r)
 }
 
-func buildCronJob(sched *crdv1beta1.SnapshotSchedule) batchv1.CronJob {
+func buildCronJob(sched *crdv1beta1.QuestDBSnapshotSchedule) batchv1.CronJob {
 	return batchv1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      sched.Name,
@@ -132,7 +132,7 @@ func buildCronJob(sched *crdv1beta1.SnapshotSchedule) batchv1.CronJob {
 	}
 }
 
-func buildSnapshotConfigMap(sched *crdv1beta1.SnapshotSchedule) (v1.ConfigMap, error) {
+func buildSnapshotConfigMap(sched *crdv1beta1.QuestDBSnapshotSchedule) (v1.ConfigMap, error) {
 
 	snap := volumesnapshotv1.VolumeSnapshot{
 		ObjectMeta: metav1.ObjectMeta{

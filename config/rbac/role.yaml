@@ -132,7 +132,7 @@ rules:
 - apiGroups:
   - crd.questdb.io
   resources:
-  - snapshotschedules
+  - questdbsnapshotschedules
   verbs:
   - create
   - delete
@@ -144,13 +144,13 @@ rules:
 - apiGroups:
   - crd.questdb.io
   resources:
-  - snapshotschedules/finalizers
+  - questdbsnapshotschedules/finalizers
   verbs:
   - update
 - apiGroups:
   - crd.questdb.io
   resources:
-  - snapshotschedules/status
+  - questdbsnapshotschedules/status
   verbs:
   - get
   - patch

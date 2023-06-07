@@ -4,12 +4,12 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/name: clusterrole
-    app.kubernetes.io/instance: snapshotschedule-editor-role
+    app.kubernetes.io/instance: questdbsnapshotschedule-editor-role
     app.kubernetes.io/component: rbac
     app.kubernetes.io/created-by: questdb-operator
     app.kubernetes.io/part-of: questdb-operator
     app.kubernetes.io/managed-by: kustomize
-  name: snapshotschedule-editor-role
+  name: questdbsnapshotschedule-editor-role
 rules:
 - apiGroups:
   - crd.questdb.io

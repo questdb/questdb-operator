@@ -5,20 +5,20 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.11.1
   creationTimestamp: null
-  name: snapshotschedules.crd.questdb.io
+  name: questdbsnapshotschedules.crd.questdb.io
 spec:
   group: crd.questdb.io
   names:
-    kind: SnapshotSchedule
+    kind: QuestDBSnapshotSchedule
     listKind: SnapshotScheduleList
-    plural: snapshotschedules
-    singular: snapshotschedule
+    plural: questdbsnapshotschedules
+    singular: questdbsnapshotschedule
   scope: Namespaced
   versions:
   - name: v1beta1
     schema:
       openAPIV3Schema:
-        description: SnapshotSchedule is the Schema for the snapshotschedules API
+        description: QuestDBSnapshotSchedule is the Schema for the questdbsnapshotschedules API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -33,7 +33,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: SnapshotScheduleSpec defines the desired state of SnapshotSchedule
+            description: SnapshotScheduleSpec defines the desired state of QuestDBSnapshotSchedule
             properties:
               schedule:
                 type: string
@@ -84,7 +84,7 @@ spec:
             - serviceAccountName
             type: object
           status:
-            description: SnapshotScheduleStatus defines the observed state of SnapshotSchedule
+            description: SnapshotScheduleStatus defines the observed state of QuestDBSnapshotSchedule
             type: object
         type: object
     served: true

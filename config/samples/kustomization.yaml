@@ -1,6 +1,6 @@
 ## Append samples you want in your CSV to this file as resources ##
 resources:
 - crd_v1beta1_questdb.yaml
-- crd_v1beta1_snapshotschedule.yaml
+- crd_v1beta1_questdbsnapshotschedule.yaml
 - crd_v1beta1_snapshot.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples
