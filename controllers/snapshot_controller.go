@@ -22,6 +22,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,12 +32,14 @@ import (
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // SnapshotReconciler reconciles a Snapshot object
 type SnapshotReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=snapshots,verbs=get;list;watch;create;update;patch;delete
@@ -48,9 +51,114 @@ type SnapshotReconciler struct {
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 func (r *SnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	var (
+		err error
 
-	// todo: Reconcile the VolumeSnapshot objects
+		_    = log.FromContext(ctx)
+		snap = &crdv1beta1.Snapshot{}
+	)
+
+	// Try to get the object we are reconciling.  Exit if it does not exist
+	if err = r.Get(ctx, req.NamespacedName, snap); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	// todo: add a finalizer to prevent deletion during the snapshot process -- this should be covered by volumesnapshot finalizer
+	// todo: actually add a finalizer to run snapshot complete
+
+	switch snap.Status.Phase {
+	case "":
+		// Set the phase to pending
+		snap.Status.Phase = crdv1beta1.SnapshotPending
+		if err = r.Status().Update(ctx, snap); err != nil {
+			return ctrl.Result{}, err
+		}
+		r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotPending", "Snapshot %s is pending", snap.Name)
+		return ctrl.Result{}, nil
+	case crdv1beta1.SnapshotPending:
+		// Create the pre-snapshot job
+		job, err := r.buildPreSnapshotJob(snap)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if err = r.Create(ctx, &job); err != nil {
+			if apierrors.IsAlreadyExists(err) {
+				err = r.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, &job)
+			}
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+
+		// Check if the pre-snapshot job is complete
+		if job.Status.Succeeded == 1 {
+			// Set the phase to running
+			snap.Status.Phase = crdv1beta1.SnapshotRunning
+			if err = r.Status().Update(ctx, snap); err != nil {
+				return ctrl.Result{}, err
+			}
+			r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotRunning", "Snapshot %s is running", snap.Name)
+			return ctrl.Result{}, nil
+		}
+
+	case crdv1beta1.SnapshotRunning:
+		// Create the volume snapshot
+		volumeSnap, err := r.buildVolumeSnapshot(snap)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if err = r.Create(ctx, &volumeSnap); err != nil {
+			if apierrors.IsAlreadyExists(err) {
+				err = r.Get(ctx, client.ObjectKey{Name: volumeSnap.Name, Namespace: volumeSnap.Namespace}, &volumeSnap)
+			}
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+
+		// Check if the snapshot job is complete
+		if volumeSnap.Status != nil && volumeSnap.Status.ReadyToUse != nil && *volumeSnap.Status.ReadyToUse {
+			// Set the phase to cleaning
+			snap.Status.Phase = crdv1beta1.SnapshotCleaning
+			if err = r.Status().Update(ctx, snap); err != nil {
+				return ctrl.Result{}, err
+			}
+			r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotCleaning", "Snapshot %s is cleaning", snap.Name)
+			return ctrl.Result{}, nil
+		}
+
+	case crdv1beta1.SnapshotCleaning:
+		// Create the pre-snapshot job
+		job, err := r.buildPostSnapshotJob(snap)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if err = r.Create(ctx, &job); err != nil {
+			if apierrors.IsAlreadyExists(err) {
+				err = r.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, &job)
+			}
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+
+		// Check if the post-snapshot job is complete
+		if job.Status.Succeeded == 1 {
+			// Set the phase to running
+			snap.Status.Phase = crdv1beta1.SnapshotSucceeded
+			if err = r.Status().Update(ctx, snap); err != nil {
+				return ctrl.Result{}, err
+			}
+			r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotSucceeded", "Snapshot %s succeeded", snap.Name)
+			return ctrl.Result{}, nil
+		}
+	case crdv1beta1.SnapshotFailed:
+		// todo: figure out what to do if the snapshot failed .. need to run snapshot complete
+		return ctrl.Result{}, nil
+		// r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotFailed", "Snapshot %s failed", snap.Name)
+	case crdv1beta1.SnapshotSucceeded:
+		// todo: figure out what to do if the snapshot succeeded
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -64,36 +172,35 @@ func (r *SnapshotReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func buildPreSnapshotJob(snap *crdv1beta1.Snapshot) batchv1.Job {
-	return buildGenericSnapshotJob(snap, "pre-snapshot", "SNAPSHOT PREPARE;")
+func (r *SnapshotReconciler) buildPreSnapshotJob(snap *crdv1beta1.Snapshot) (batchv1.Job, error) {
+	return r.buildGenericSnapshotJob(snap, "pre-snapshot", "SNAPSHOT PREPARE;")
 }
 
-func buildPostSnapshotJob(snap *crdv1beta1.Snapshot) batchv1.Job {
-	return buildGenericSnapshotJob(snap, "post-snapshot", "SNAPSHOT COMPLETE;")
+func (r *SnapshotReconciler) buildPostSnapshotJob(snap *crdv1beta1.Snapshot) (batchv1.Job, error) {
+	return r.buildGenericSnapshotJob(snap, "post-snapshot", "SNAPSHOT COMPLETE;")
 }
 
-func buildGenericSnapshotJob(snap *crdv1beta1.Snapshot, nameSuffix, command string) batchv1.Job {
-	return batchv1.Job{
+func (r *SnapshotReconciler) buildGenericSnapshotJob(snap *crdv1beta1.Snapshot, nameSuffix, command string) (batchv1.Job, error) {
+	var err error
+	job := batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        fmt.Sprintf("%s-%s", snap.Name, nameSuffix),
-			Namespace:   snap.Namespace,
-			Labels:      snap.Labels,
-			Annotations: snap.Annotations,
+			Name:      fmt.Sprintf("%s-%s", snap.Name, nameSuffix),
+			Namespace: snap.Namespace,
+			Labels:    snap.Labels,
 		},
 		Spec: batchv1.JobSpec{
 			Completions: pointer.Int32(1),
 			Template: v1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        fmt.Sprintf("%s-%s", snap.Name, nameSuffix),
-					Namespace:   snap.Namespace,
-					Labels:      snap.Labels,
-					Annotations: snap.Annotations,
+					Name:      fmt.Sprintf("%s-%s", snap.Name, nameSuffix),
+					Namespace: snap.Namespace,
+					Labels:    snap.Labels,
 				},
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{
 						{
 							Name:  "psql",
-							Image: "postgres:13.3", // todo: Make this variable
+							Image: "postgres:13.3", // todo: Make this variable.. probably in env var or setup config
 							Command: []string{
 								"psql",
 								"-c",
@@ -102,15 +209,15 @@ func buildGenericSnapshotJob(snap *crdv1beta1.Snapshot, nameSuffix, command stri
 							Env: []v1.EnvVar{
 								{
 									Name:  "PGHOST",
-									Value: "localhost", // todo: use questdb service name
+									Value: fmt.Sprintf("%s.%s.svc.cluster.local", snap.Spec.QuestDB, snap.Namespace),
 								},
 								{
 									Name:  "PGUSER",
-									Value: "postgres", // todo: use secret (or mount?)
+									Value: "admin", // todo: use secret (or mount?)
 								},
 								{
 									Name:  "PGPASSWORD",
-									Value: "postgres", // todo: use secret (or mount?)
+									Value: "quest", // todo: use secret (or mount?)
 								},
 								{
 									Name:  "PGDATABASE",
@@ -118,7 +225,7 @@ func buildGenericSnapshotJob(snap *crdv1beta1.Snapshot, nameSuffix, command stri
 								},
 								{
 									Name:  "PGPORT",
-									Value: "5432", // todo: use questdb psql service port
+									Value: "8812", // todo: make this variable (based on service port)
 								},
 							},
 						},
@@ -128,11 +235,32 @@ func buildGenericSnapshotJob(snap *crdv1beta1.Snapshot, nameSuffix, command stri
 			},
 		},
 	}
+
+	err = ctrl.SetControllerReference(snap, &job, r.Scheme)
+	return job, err
 }
 
-func buildVolumeSnapshot(snap *crdv1beta1.Snapshot) volumesnapshotv1.VolumeSnapshot {
-	return volumesnapshotv1.VolumeSnapshot{
-		ObjectMeta: snap.ObjectMeta,
-		Spec:       snap.Spec.Snapshot,
+func (r *SnapshotReconciler) buildVolumeSnapshot(snap *crdv1beta1.Snapshot) (volumesnapshotv1.VolumeSnapshot, error) {
+	var err error
+	volSnap := volumesnapshotv1.VolumeSnapshot{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      snap.Name,
+			Namespace: snap.Namespace,
+			Labels:    snap.Labels,
+		},
+		Spec: volumesnapshotv1.VolumeSnapshotSpec{
+			Source: volumesnapshotv1.VolumeSnapshotSource{
+				PersistentVolumeClaimName: pointer.String(snap.Spec.QuestDB),
+			},
+		},
 	}
+
+	if snap.Spec.VolumeSnapshotClass != "" {
+		volSnap.Spec.VolumeSnapshotClassName = pointer.String(snap.Spec.VolumeSnapshotClass)
+	}
+
+	// todo: figure out why we aren't waiting for the volumesnapshot to delete before cleaning up the snapshot
+	err = ctrl.SetControllerReference(snap, &volSnap, r.Scheme)
+	return volSnap, err
+
 }

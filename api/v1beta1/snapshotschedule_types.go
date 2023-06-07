@@ -23,8 +23,9 @@ import (
 
 // SnapshotScheduleSpec defines the desired state of SnapshotSchedule
 type SnapshotScheduleSpec struct {
-	Schedule string                              `json:"schedule"`
-	Snapshot volumesnapshotv1.VolumeSnapshotSpec `json:"snapshot,omitempty"`
+	Schedule           string                              `json:"schedule"`
+	Snapshot           volumesnapshotv1.VolumeSnapshotSpec `json:"snapshot,omitempty"`
+	ServiceAccountName string                              `json:"serviceAccountName"`
 }
 
 // SnapshotScheduleStatus defines the observed state of SnapshotSchedule

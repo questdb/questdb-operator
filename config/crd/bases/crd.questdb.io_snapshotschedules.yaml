@@ -37,6 +37,8 @@ spec:
             properties:
               schedule:
                 type: string
+              serviceAccountName:
+                type: string
               snapshot:
                 description: VolumeSnapshotSpec describes the common attributes of
                   a volume snapshot.
@@ -79,6 +81,7 @@ spec:
                 type: object
             required:
             - schedule
+            - serviceAccountName
             type: object
           status:
             description: SnapshotScheduleStatus defines the observed state of SnapshotSchedule

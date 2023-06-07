@@ -58,10 +58,15 @@ type QuestDBSpec struct {
 	// todo: Add pod spec-y things here like imagepullsecrets, resource requests, etc.
 }
 
+type QuestDBEndpointStatus struct {
+	Ilp  string `json:"ilp,omitempty"`
+	Psql string `json:"psql,omitempty"`
+	Http string `json:"http,omitempty"`
+}
+
 // QuestDBStatus defines the observed state of QuestDB
 type QuestDBStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	Endpoints QuestDBEndpointStatus `json:"endpoints,omitempty"`
 }
 
 //+kubebuilder:object:root=true

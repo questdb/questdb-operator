@@ -17,7 +17,6 @@ limitations under the License.
 package v1beta1
 
 import (
-	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -38,24 +37,15 @@ const (
 
 // SnapshotSpec defines the desired state of Snapshot
 type SnapshotSpec struct {
-	QuestDB  string                              `json:"questDB,omitempty"`
-	Snapshot volumesnapshotv1.VolumeSnapshotSpec `json:"snapshot,omitempty"`
-}
-
-type SnapshotStatusS3 struct {
-	Bucket string `json:"bucket,omitempty"`
-	Key    string `json:"key,omitempty"`
-}
-
-type SnapshotStatusEBS struct {
-	VolumeID string `json:"volumeID,omitempty"`
+	QuestDB             string `json:"questdb"`
+	VolumeSnapshotClass string `json:"volumeSnapshotClass"`
 }
 
 // SnapshotStatus defines the observed state of Snapshot
 type SnapshotStatus struct {
-	Phase SnapshotPhase     `json:"phase,omitempty"`
-	S3    SnapshotStatusS3  `json:"s3,omitempty"`
-	EBS   SnapshotStatusEBS `json:"ebs,omitempty"`
+	Phase            SnapshotPhase `json:"phase,omitempty"`
+	SnapshotStarted  metav1.Time   `json:"snapshotStarted,omitempty"`
+	SnapshotFinished metav1.Time   `json:"snapshotFinished,omitempty"`
 }
 
 //+kubebuilder:object:root=true

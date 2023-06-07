@@ -83,10 +83,9 @@ func (r *SnapshotScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func buildCronJob(sched *crdv1beta1.SnapshotSchedule) batchv1.CronJob {
 	return batchv1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        sched.Name,
-			Namespace:   sched.Namespace,
-			Labels:      sched.Labels,
-			Annotations: sched.Annotations,
+			Name:      sched.Name,
+			Namespace: sched.Namespace,
+			Labels:    sched.Labels,
 		},
 		Spec: batchv1.CronJobSpec{
 			Schedule: sched.Spec.Schedule,
@@ -94,10 +93,9 @@ func buildCronJob(sched *crdv1beta1.SnapshotSchedule) batchv1.CronJob {
 				Spec: batchv1.JobSpec{
 					Template: v1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:        sched.Name,
-							Namespace:   sched.Namespace,
-							Labels:      sched.Labels,
-							Annotations: sched.Annotations,
+							Name:      sched.Name,
+							Namespace: sched.Namespace,
+							Labels:    sched.Labels,
 						},
 						Spec: v1.PodSpec{
 							Containers: []v1.Container{
@@ -138,10 +136,9 @@ func buildSnapshotConfigMap(sched *crdv1beta1.SnapshotSchedule) (v1.ConfigMap, e
 
 	snap := volumesnapshotv1.VolumeSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        fmt.Sprintf("%s-%s", sched.Name, time.Now().Format("20060102150405")),
-			Namespace:   sched.Namespace,
-			Labels:      sched.Labels,
-			Annotations: sched.Annotations,
+			Name:      fmt.Sprintf("%s-%s", sched.Name, time.Now().Format("20060102150405")),
+			Namespace: sched.Namespace,
+			Labels:    sched.Labels,
 		},
 		Spec: sched.Spec.Snapshot,
 	}
@@ -153,10 +150,9 @@ func buildSnapshotConfigMap(sched *crdv1beta1.SnapshotSchedule) (v1.ConfigMap, e
 
 	return v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        sched.Name,
-			Namespace:   sched.Namespace,
-			Labels:      sched.Labels,
-			Annotations: sched.Annotations,
+			Name:      sched.Name,
+			Namespace: sched.Namespace,
+			Labels:    sched.Labels,
 		},
 		Data: map[string]string{
 			"snapshot.yaml": string(data),
