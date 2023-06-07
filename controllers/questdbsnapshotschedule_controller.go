@@ -36,8 +36,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// SnapshotScheduleReconciler reconciles a QuestDBSnapshotSchedule object
-type SnapshotScheduleReconciler struct {
+// QuestDBSnapshotScheduleReconciler reconciles a QuestDBSnapshotSchedule object
+type QuestDBSnapshotScheduleReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 }
@@ -50,7 +50,7 @@ type SnapshotScheduleReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-func (r *SnapshotScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var (
 		err error
 
@@ -72,7 +72,7 @@ func (r *SnapshotScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *SnapshotScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *QuestDBSnapshotScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&crdv1beta1.QuestDBSnapshotSchedule{}).
 		Owns(&batchv1.CronJob{}).

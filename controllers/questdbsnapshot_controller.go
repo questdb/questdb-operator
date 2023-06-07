@@ -35,27 +35,27 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-// SnapshotReconciler reconciles a Snapshot object
-type SnapshotReconciler struct {
+// QuestDBSnapshotReconciler reconciles a QuestDBSnapshot object
+type QuestDBSnapshotReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
 }
 
-//+kubebuilder:rbac:groups=crd.questdb.io,resources=snapshots,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=crd.questdb.io,resources=snapshots/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=crd.questdb.io,resources=snapshots/finalizers,verbs=update
+//+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbsnapshots,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbsnapshots/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbsnapshots/finalizers,verbs=update
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-func (r *SnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *QuestDBSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var (
 		err error
 
 		_    = log.FromContext(ctx)
-		snap = &crdv1beta1.Snapshot{}
+		snap = &crdv1beta1.QuestDBSnapshot{}
 	)
 
 	// Try to get the object we are reconciling.  Exit if it does not exist
@@ -164,23 +164,23 @@ func (r *SnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *SnapshotReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *QuestDBSnapshotReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&crdv1beta1.Snapshot{}).
+		For(&crdv1beta1.QuestDBSnapshot{}).
 		Owns(&volumesnapshotv1.VolumeSnapshot{}).
 		Owns(&batchv1.Job{}).
 		Complete(r)
 }
 
-func (r *SnapshotReconciler) buildPreSnapshotJob(snap *crdv1beta1.Snapshot) (batchv1.Job, error) {
+func (r *QuestDBSnapshotReconciler) buildPreSnapshotJob(snap *crdv1beta1.QuestDBSnapshot) (batchv1.Job, error) {
 	return r.buildGenericSnapshotJob(snap, "pre-snapshot", "SNAPSHOT PREPARE;")
 }
 
-func (r *SnapshotReconciler) buildPostSnapshotJob(snap *crdv1beta1.Snapshot) (batchv1.Job, error) {
+func (r *QuestDBSnapshotReconciler) buildPostSnapshotJob(snap *crdv1beta1.QuestDBSnapshot) (batchv1.Job, error) {
 	return r.buildGenericSnapshotJob(snap, "post-snapshot", "SNAPSHOT COMPLETE;")
 }
 
-func (r *SnapshotReconciler) buildGenericSnapshotJob(snap *crdv1beta1.Snapshot, nameSuffix, command string) (batchv1.Job, error) {
+func (r *QuestDBSnapshotReconciler) buildGenericSnapshotJob(snap *crdv1beta1.QuestDBSnapshot, nameSuffix, command string) (batchv1.Job, error) {
 	var err error
 	job := batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -240,7 +240,7 @@ func (r *SnapshotReconciler) buildGenericSnapshotJob(snap *crdv1beta1.Snapshot, 
 	return job, err
 }
 
-func (r *SnapshotReconciler) buildVolumeSnapshot(snap *crdv1beta1.Snapshot) (volumesnapshotv1.VolumeSnapshot, error) {
+func (r *QuestDBSnapshotReconciler) buildVolumeSnapshot(snap *crdv1beta1.QuestDBSnapshot) (volumesnapshotv1.VolumeSnapshot, error) {
 	var err error
 	volSnap := volumesnapshotv1.VolumeSnapshot{
 		ObjectMeta: metav1.ObjectMeta{

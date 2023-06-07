@@ -106,7 +106,7 @@ rules:
 - apiGroups:
   - crd.questdb.io
   resources:
-  - snapshots
+  - questdbsnapshots
   verbs:
   - create
   - delete
@@ -118,13 +118,13 @@ rules:
 - apiGroups:
   - crd.questdb.io
   resources:
-  - snapshots/finalizers
+  - questdbsnapshots/finalizers
   verbs:
   - update
 - apiGroups:
   - crd.questdb.io
   resources:
-  - snapshots/status
+  - questdbsnapshots/status
   verbs:
   - get
   - patch
@@ -156,7 +156,7 @@ rules:
   - patch
   - update
 - apiGroups:
-  - snapshot.storage.k8s.io
+  - questdbsnapshot.storage.k8s.io
   resources:
   - volumesnapshots
   verbs:

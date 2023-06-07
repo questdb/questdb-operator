@@ -5,20 +5,20 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.11.1
   creationTimestamp: null
-  name: snapshots.crd.questdb.io
+  name: questdbsnapshots.crd.questdb.io
 spec:
   group: crd.questdb.io
   names:
-    kind: Snapshot
+    kind: QuestDBSnapshot
     listKind: SnapshotList
-    plural: snapshots
-    singular: snapshot
+    plural: questdbsnapshots
+    singular: questdbsnapshot
   scope: Namespaced
   versions:
   - name: v1beta1
     schema:
       openAPIV3Schema:
-        description: Snapshot is the Schema for the snapshots API
+        description: QuestDBSnapshot is the Schema for the questdbsnapshots API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -33,7 +33,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: SnapshotSpec defines the desired state of Snapshot
+            description: SnapshotSpec defines the desired state of QuestDBSnapshot
             properties:
               questdb:
                 type: string
@@ -44,7 +44,7 @@ spec:
             - volumeSnapshotClass
             type: object
           status:
-            description: SnapshotStatus defines the observed state of Snapshot
+            description: SnapshotStatus defines the observed state of QuestDBSnapshot
             properties:
               phase:
                 type: string

@@ -1,5 +1,5 @@
 apiVersion: crd.questdb.io/v1beta1
-kind: Snapshot
+kind: QuestDBSnapshot
 metadata:
   labels:
     app.kubernetes.io/name: snapshot

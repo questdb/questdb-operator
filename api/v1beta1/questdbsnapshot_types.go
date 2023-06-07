@@ -20,39 +20,39 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type SnapshotPhase string
+type QuestDBSnapshotPhase string
 
 const (
 	// SnapshotPending means the snapshot has not started yet
-	SnapshotPending SnapshotPhase = "Pending"
+	SnapshotPending QuestDBSnapshotPhase = "Pending"
 	// SnapshotRunning means the snapshot is running
-	SnapshotRunning SnapshotPhase = "Running"
+	SnapshotRunning QuestDBSnapshotPhase = "Running"
 	// SnapshotCleaning means the snapshot is cleaning up
-	SnapshotCleaning SnapshotPhase = "Cleaning"
+	SnapshotCleaning QuestDBSnapshotPhase = "Cleaning"
 	// SnapshotFailed means the snapshot has failed
-	SnapshotFailed SnapshotPhase = "Failed"
+	SnapshotFailed QuestDBSnapshotPhase = "Failed"
 	// SnapshotSucceeded means the snapshot has succeeded
-	SnapshotSucceeded SnapshotPhase = "Succeeded"
+	SnapshotSucceeded QuestDBSnapshotPhase = "Succeeded"
 )
 
-// SnapshotSpec defines the desired state of Snapshot
+// SnapshotSpec defines the desired state of QuestDBSnapshot
 type SnapshotSpec struct {
 	QuestDB             string `json:"questdb"`
 	VolumeSnapshotClass string `json:"volumeSnapshotClass"`
 }
 
-// SnapshotStatus defines the observed state of Snapshot
+// SnapshotStatus defines the observed state of QuestDBSnapshot
 type SnapshotStatus struct {
-	Phase            SnapshotPhase `json:"phase,omitempty"`
-	SnapshotStarted  metav1.Time   `json:"snapshotStarted,omitempty"`
-	SnapshotFinished metav1.Time   `json:"snapshotFinished,omitempty"`
+	Phase            QuestDBSnapshotPhase `json:"phase,omitempty"`
+	SnapshotStarted  metav1.Time          `json:"snapshotStarted,omitempty"`
+	SnapshotFinished metav1.Time          `json:"snapshotFinished,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 
-// Snapshot is the Schema for the snapshots API
-type Snapshot struct {
+// QuestDBSnapshot is the Schema for the snapshots API
+type QuestDBSnapshot struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
@@ -62,13 +62,13 @@ type Snapshot struct {
 
 //+kubebuilder:object:root=true
 
-// SnapshotList contains a list of Snapshot
+// SnapshotList contains a list of QuestDBSnapshot
 type SnapshotList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Snapshot `json:"items"`
+	Items           []QuestDBSnapshot `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&Snapshot{}, &SnapshotList{})
+	SchemeBuilder.Register(&QuestDBSnapshot{}, &SnapshotList{})
 }
