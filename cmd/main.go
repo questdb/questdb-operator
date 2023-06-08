@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 	"github.com/questdb/questdb-operator/internal/controller"
 	//+kubebuilder:scaffold:imports
@@ -110,6 +111,10 @@ func main() {
 		Recorder: mgr.GetEventRecorderFor("questdbsnapshot-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "QuestDBSnapshot")
+		os.Exit(1)
+	}
+	if err = (&crdv1beta1.QuestDBSnapshot{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "QuestDBSnapshot")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
