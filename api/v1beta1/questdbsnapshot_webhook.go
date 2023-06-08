@@ -43,6 +43,9 @@ var _ webhook.Validator = &QuestDBSnapshot{}
 func (r *QuestDBSnapshot) ValidateCreate() error {
 	questdbsnapshotlog.Info("validate create", "name", r.Name)
 
+	// todo: Check that the questdb exists
+	// todo: Check thast the snapshotclass exists
+
 	// TODO(user): fill in your validation logic upon object creation.
 	return nil
 }

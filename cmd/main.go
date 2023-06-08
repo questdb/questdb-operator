@@ -54,11 +54,13 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var certDir string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.StringVar(&certDir, "cert-dir", "/tmp/k8s-webhook-server/serving-certs", "The directory where the TLS certs are located.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -72,6 +74,7 @@ func main() {
 		MetricsBindAddress:     metricsAddr,
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
+		CertDir:                certDir,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "c6e41798.questdb.io",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily

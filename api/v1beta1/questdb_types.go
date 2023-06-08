@@ -22,6 +22,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	QuestDBSnapshotProtectionFinalizer = "questdb.crd.questdb.io/snapshot-protection-finalizer"
+)
+
 type QuestDBResourcesSpec struct {
 	Limits   v1.ResourceList `json:"limits,omitempty"`
 	Requests v1.ResourceList `json:"requests,omitempty"`

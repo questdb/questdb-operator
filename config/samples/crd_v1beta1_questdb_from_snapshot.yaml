@@ -4,11 +4,12 @@ metadata:
   labels:
     app.kubernetes.io/name: questdb
     app.kubernetes.io/instance: questdb-sample
-    app.kubernetes.io/part-of: questdb-operator-v4
+    app.kubernetes.io/part-of: questdb-operator
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: questdb-operator-v4
-  name: questdb-sample
+    app.kubernetes.io/created-by: questdb-operator
+  name: questdb-sample-from-snapshot
 spec:
   volume:
     size: 1Gi
+    snapshotName: questdbsnapshot-sample
   image: questdb/questdb:latest

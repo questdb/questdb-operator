@@ -21,43 +21,9 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 	var (
 		q *crdv1beta1.QuestDB
 
-		timeout  = time.Second * 3
+		timeout  = time.Second * 2
 		interval = time.Millisecond * 100
 	)
-
-	BeforeEach(func() {
-		var (
-			name = "test-snapshot"
-			ns   = fmt.Sprintf("test-ns-%d", time.Now().UnixNano())
-		)
-
-		By("Creating a namespace")
-		Expect(k8sClient.Create(ctx, &v1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: ns,
-			},
-		})).To(Succeed())
-
-		By("Creating a QuestDB")
-		q = &crdv1beta1.QuestDB{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: ns,
-				Labels: map[string]string{
-					"app": "questdb",
-				},
-			},
-			Spec: crdv1beta1.QuestDBSpec{
-				Volume: crdv1beta1.QuestDBVolumeSpec{
-					Size: resource.MustParse("1Gi"),
-				},
-				Image: "questdb/questdb:latest",
-			},
-		}
-
-		Expect(k8sClient.Create(ctx, q)).To(Succeed())
-
-	})
 
 	Context("When a QuestDBSnapshot is created", Ordered, func() {
 		var (
@@ -67,6 +33,36 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 		)
 
 		BeforeAll(func() {
+			var (
+				name = "test-snapshot"
+				ns   = fmt.Sprintf("test-ns-%d", time.Now().UnixNano())
+			)
+
+			By("Creating a namespace")
+			Expect(k8sClient.Create(ctx, &v1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: ns,
+				},
+			})).To(Succeed())
+
+			By("Creating a QuestDB")
+			q = &crdv1beta1.QuestDB{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: ns,
+					Labels: map[string]string{
+						"app": "questdb",
+					},
+				},
+				Spec: crdv1beta1.QuestDBSpec{
+					Volume: crdv1beta1.QuestDBVolumeSpec{
+						Size: resource.MustParse("1Gi"),
+					},
+					Image: "questdb/questdb:latest",
+				},
+			}
+			Expect(k8sClient.Create(ctx, q)).To(Succeed())
+
 			By("Creating a QuestDBSnapshot")
 			snap = &crdv1beta1.QuestDBSnapshot{
 				ObjectMeta: metav1.ObjectMeta{
@@ -116,6 +112,14 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 				g.Expect(snap.Status.Phase).Should(Equal(crdv1beta1.SnapshotPending))
 
 			}, 1*time.Second, interval).Should(Succeed())
+		})
+
+		It("Should add the snapshot protection finalizer to the QuestDB", func() {
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
+				g.Expect(q.Finalizers).To(ContainElement(crdv1beta1.QuestDBSnapshotProtectionFinalizer))
+			}, timeout, interval).Should(Succeed())
+
 		})
 
 		It("Should create a VolumeSnapshot once the pre-snapshot job is complete", func() {

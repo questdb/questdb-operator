@@ -35,6 +35,10 @@ const (
 	SnapshotSucceeded QuestDBSnapshotPhase = "Succeeded"
 )
 
+const (
+	QuestDBSnapshotFinalizer = "questdbsnapshot.crd.questdb.io/finalizer"
+)
+
 // QuestDBSnapshotSpec defines the desired state of QuestDBSnapshot
 type QuestDBSnapshotSpec struct {
 	QuestDB             string `json:"questdb"`
