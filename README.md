@@ -1,4 +1,4 @@
-# questdb-operator-v4
+# questdb-operator
 // TODO(user): Add simple overview of use/purpose
 
 ## Description
@@ -27,13 +27,13 @@ kubectl apply -f config/samples/
 2. Build and push your image to the location specified by `IMG`:
 
 ```sh
-make docker-build docker-push IMG=<some-registry>/questdb-operator-v4:tag
+make docker-build docker-push IMG=<some-registry>/questdb-operator:tag
 ```
 
 3. Deploy the controller to the cluster with the image specified by `IMG`:
 
 ```sh
-make deploy IMG=<some-registry>/questdb-operator-v4:tag
+make deploy IMG=<some-registry>/questdb-operator:tag
 ```
 
 ### Uninstall CRDs
@@ -100,4 +100,3 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-

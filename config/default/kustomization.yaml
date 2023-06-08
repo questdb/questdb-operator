@@ -1,12 +1,12 @@
 # Adds namespace to all resources.
-namespace: questdb-operator-v4-system
+namespace: questdb-operator-system
 
 # Value of this field is prepended to the
 # names of all resources, e.g. a deployment named
 # "wordpress" becomes "alices-wordpress".
 # Note that it should also match with the prefix (text before '-') of the namespace
 # field above.
-namePrefix: questdb-operator-v4-
+namePrefix: questdb-operator-
 
 # Labels to add to all resources and selectors.
 #labels:

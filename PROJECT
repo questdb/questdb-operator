@@ -8,7 +8,7 @@ layout:
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
-projectName: questdb-operator-v4
+projectName: questdb-operator
 repo: github.com/questdb/questdb-operator
 resources:
 - api:

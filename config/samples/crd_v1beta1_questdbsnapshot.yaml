@@ -4,9 +4,9 @@ metadata:
   labels:
     app.kubernetes.io/name: questdbsnapshot
     app.kubernetes.io/instance: questdbsnapshot-sample
-    app.kubernetes.io/part-of: questdb-operator-v4
+    app.kubernetes.io/part-of: questdb-operator
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: questdb-operator-v4
+    app.kubernetes.io/created-by: questdb-operator
   name: questdbsnapshot-sample
 spec:
   questdb: questdb-sample
