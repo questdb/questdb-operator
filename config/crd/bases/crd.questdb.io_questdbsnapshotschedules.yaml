@@ -63,6 +63,16 @@ spec:
             - schedule
             - serviceAccountName
             type: object
+          status:
+            description: QuestDBSnapshotStatus defines the observed state of QuestDBSnapshot
+            properties:
+              latestSnapshot:
+                format: date-time
+                type: string
+              nextSnapshot:
+                format: date-time
+                type: string
+            type: object
         type: object
     served: true
     storage: true

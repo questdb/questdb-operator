@@ -43,7 +43,8 @@ type QuestDBSnapshotSchedule struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec QuestDBSnapshotScheduleSpec `json:"spec,omitempty"`
+	Spec   QuestDBSnapshotScheduleSpec   `json:"spec,omitempty"`
+	Status QuestDBSnapshotScheduleStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
