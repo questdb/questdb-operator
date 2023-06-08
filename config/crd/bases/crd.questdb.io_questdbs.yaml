@@ -12,6 +12,9 @@ spec:
     kind: QuestDB
     listKind: QuestDBList
     plural: questdbs
+    shortNames:
+    - qdb
+    - qdbs
     singular: questdb
   scope: Namespaced
   versions:

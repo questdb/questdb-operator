@@ -101,6 +101,18 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+.PHONY: install-test-crds
+install-test-crds:
+	@if ! test -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshotclasses.yaml ; then \
+		curl -O --create-dirs --output-dir $(TEST_CRD_DIR) $(REMOTE_SNAPSHOTTER_CRD_PATH)/snapshot.storage.k8s.io_volumesnapshotclasses.yaml ; \
+	fi
+	@if ! test -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshotclasses.yaml ; then \
+		curl -O --create-dirs --output-dir $(TEST_CRD_DIR) $(REMOTE_SNAPSHOTTER_CRD_PATH)/snapshot.storage.k8s.io_volumesnapshotcontents.yaml ; \
+	fi
+	@if ! test -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshotclasses.yaml ; then \
+		curl -O --create-dirs --output-dir $(TEST_CRD_DIR) $(REMOTE_SNAPSHOTTER_CRD_PATH)/snapshot.storage.k8s.io_volumesnapshots.yaml ; \
+	fi
+
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
@@ -181,6 +193,10 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v3.8.7
 CONTROLLER_TOOLS_VERSION ?= v0.11.1
+
+## Test CRD Directories
+TEST_CRD_DIR ?= tests/crd/external-snapshotter
+REMOTE_SNAPSHOTTER_CRD_PATH ?= https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 .PHONY: kustomize

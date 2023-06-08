@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,10 +28,8 @@ import (
 
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 
-	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -45,8 +42,7 @@ type QuestDBSnapshotScheduleReconciler struct {
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbsnapshotschedules,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbsnapshotschedules/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbsnapshotschedules/finalizers,verbs=update
-//+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=questdbsnapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -58,16 +54,10 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 		_     = log.FromContext(ctx)
 	)
 
-	err = r.Get(ctx, req.NamespacedName, sched)
-
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		} else {
-			return ctrl.Result{}, err
-		}
+	// Try to get the object we are reconciling.  Exit if it does not exist
+	if err = r.Get(ctx, req.NamespacedName, sched); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-
 	return ctrl.Result{}, nil
 }
 
@@ -77,64 +67,15 @@ func (r *QuestDBSnapshotScheduleReconciler) SetupWithManager(mgr ctrl.Manager) e
 		For(&crdv1beta1.QuestDBSnapshotSchedule{}).
 		Owns(&batchv1.CronJob{}).
 		Owns(&v1.ConfigMap{}).
+		Owns(&crdv1beta1.QuestDBSnapshot{}).
 		Complete(r)
 }
 
-func buildCronJob(sched *crdv1beta1.QuestDBSnapshotSchedule) batchv1.CronJob {
-	return batchv1.CronJob{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      sched.Name,
-			Namespace: sched.Namespace,
-			Labels:    sched.Labels,
-		},
-		Spec: batchv1.CronJobSpec{
-			Schedule: sched.Spec.Schedule,
-			JobTemplate: batchv1.JobTemplateSpec{
-				Spec: batchv1.JobSpec{
-					Template: v1.PodTemplateSpec{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      sched.Name,
-							Namespace: sched.Namespace,
-							Labels:    sched.Labels,
-						},
-						Spec: v1.PodSpec{
-							Containers: []v1.Container{
-								{
-									Name:  "busybox",
-									Image: "busybox:1.36.1",
-									Args:  []string{"echo", "hello"},
-									VolumeMounts: []v1.VolumeMount{
-										{
-											Name:      "snapshot",
-											MountPath: "/etc/snapshot",
-										},
-									},
-								},
-							},
-							// todo: Add ServiceAccountName -- used by the pod to allow snapshot creation ONLY
-							Volumes: []v1.Volume{
-								{
-									Name: "snapshot",
-									VolumeSource: v1.VolumeSource{
-										ConfigMap: &v1.ConfigMapVolumeSource{
-											LocalObjectReference: v1.LocalObjectReference{
-												Name: sched.Name,
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-}
-
-func buildSnapshotConfigMap(sched *crdv1beta1.QuestDBSnapshotSchedule) (v1.ConfigMap, error) {
-
-	snap := volumesnapshotv1.VolumeSnapshot{
+func (r *QuestDBSnapshotScheduleReconciler) buildSnapshot(sched *crdv1beta1.QuestDBSnapshotSchedule) (crdv1beta1.QuestDBSnapshot, error) {
+	var (
+		err error
+	)
+	snap := crdv1beta1.QuestDBSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-%s", sched.Name, time.Now().Format("20060102150405")),
 			Namespace: sched.Namespace,
@@ -143,19 +84,7 @@ func buildSnapshotConfigMap(sched *crdv1beta1.QuestDBSnapshotSchedule) (v1.Confi
 		Spec: sched.Spec.Snapshot,
 	}
 
-	data, err := yaml.Marshal(snap)
-	if err != nil {
-		return v1.ConfigMap{}, err
-	}
+	err = ctrl.SetControllerReference(sched, &snap, r.Scheme)
+	return snap, err
 
-	return v1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      sched.Name,
-			Namespace: sched.Namespace,
-			Labels:    sched.Labels,
-		},
-		Data: map[string]string{
-			"snapshot.yaml": string(data),
-		},
-	}, nil
 }

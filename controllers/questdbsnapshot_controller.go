@@ -26,6 +26,7 @@ import (
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
@@ -63,8 +64,10 @@ func (r *QuestDBSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// todo: add a finalizer to prevent deletion during the snapshot process -- this should be covered by volumesnapshot finalizer
-	// todo: actually add a finalizer to run snapshot complete
+	// Handle finalizer.  This will ensure that the "SNAPSHOT COMPLETE;" is run before the snapshot is deleted
+	if err = r.handleFinalizer(snap); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	switch snap.Status.Phase {
 	case "":
@@ -263,4 +266,31 @@ func (r *QuestDBSnapshotReconciler) buildVolumeSnapshot(snap *crdv1beta1.QuestDB
 	err = ctrl.SetControllerReference(snap, &volSnap, r.Scheme)
 	return volSnap, err
 
+}
+
+const (
+	snapshotFinalizer = "questdbsnapshot.crd.questdb.io/finalizer"
+)
+
+func (r *QuestDBSnapshotReconciler) handleFinalizer(snap *crdv1beta1.QuestDBSnapshot) error {
+	if snap.DeletionTimestamp.IsZero() {
+		if !controllerutil.ContainsFinalizer(snap, snapshotFinalizer) {
+			controllerutil.AddFinalizer(snap, snapshotFinalizer)
+			if err := r.Update(context.Background(), snap); err != nil {
+				return err
+			}
+		}
+	} else {
+		if controllerutil.ContainsFinalizer(snap, snapshotFinalizer) {
+			// Wait for the snapshot phase to be either failed or succeeded before deleting the snapshot
+			if snap.Status.Phase == crdv1beta1.SnapshotFailed || snap.Status.Phase == crdv1beta1.SnapshotSucceeded {
+				controllerutil.RemoveFinalizer(snap, snapshotFinalizer)
+				if err := r.Update(context.Background(), snap); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
 }

@@ -17,15 +17,21 @@ limitations under the License.
 package v1beta1
 
 import (
-	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // QuestDBSnapshotScheduleSpec defines the desired state of QuestDBSnapshotSchedule
 type QuestDBSnapshotScheduleSpec struct {
-	Schedule           string                              `json:"schedule"`
-	Snapshot           volumesnapshotv1.VolumeSnapshotSpec `json:"snapshot,omitempty"`
-	ServiceAccountName string                              `json:"serviceAccountName"`
+	Schedule           string              `json:"schedule"`
+	Retention          int32               `json:"retention"`
+	Snapshot           QuestDBSnapshotSpec `json:"snapshot,omitempty"`
+	ServiceAccountName string              `json:"serviceAccountName"`
+}
+
+// QuestDBSnapshotStatus defines the observed state of QuestDBSnapshot
+type QuestDBSnapshotScheduleStatus struct {
+	NextSnapshot   metav1.Time `json:"nextSnapshot,omitempty"`
+	LatestSnapshot metav1.Time `json:"latestSnapshot,omitempty"`
 }
 
 //+kubebuilder:object:root=true

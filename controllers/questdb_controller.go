@@ -78,7 +78,7 @@ func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	// todo: handle updates to the configmap???
+	// todo: handle updates to the configmap??? Or just suggest to use https://github.com/stakater/Reloader
 
 	// Reconcile the PVC
 	pvc, err := r.buildPvc(q)
@@ -96,6 +96,8 @@ func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
+	// todo: handle PVC resize
+
 	// Reconcile the StatefulSet
 	sts, err := r.buildStatefulSet(q)
 	if err != nil {
@@ -110,6 +112,8 @@ func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, err
 		}
 	}
+
+	// todo: handle statefulset updates
 
 	// Reconcile the Service
 	svc, err := r.buildService(q)

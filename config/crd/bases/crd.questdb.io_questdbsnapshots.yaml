@@ -12,6 +12,9 @@ spec:
     kind: QuestDBSnapshot
     listKind: QuestDBSnapshotList
     plural: questdbsnapshots
+    shortNames:
+    - qdbsnap
+    - qdbsnaps
     singular: questdbsnapshot
   scope: Namespaced
   versions:

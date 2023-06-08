@@ -45,7 +45,6 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(volumesnapshotv1.AddToScheme(scheme))
-
 	utilruntime.Must(crdv1beta1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }

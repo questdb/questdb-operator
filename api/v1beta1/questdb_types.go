@@ -43,7 +43,7 @@ type QuestDBConfigSpec struct {
 // QuestDBSpec defines the desired state of QuestDB
 type QuestDBSpec struct {
 	Volume QuestDBVolumeSpec `json:"volume"`
-	Config QuestDBConfigSpec `json:"config,omitempty"` // todo: remote omitempty
+	Config QuestDBConfigSpec `json:"config,omitempty"` // todo: remove omitempty
 
 	Image string `json:"image"`
 
@@ -54,8 +54,6 @@ type QuestDBSpec struct {
 	NodeSelector     map[string]string         `json:"nodeSelector,omitempty"`
 	Resources        QuestDBResourcesSpec      `json:"resources,omitempty"`
 	Tolerations      []v1.Toleration           `json:"tolerations,omitempty"`
-
-	// todo: Add pod spec-y things here like imagepullsecrets, resource requests, etc.
 }
 
 type QuestDBEndpointStatus struct {
