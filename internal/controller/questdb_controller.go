@@ -97,7 +97,15 @@ func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	// todo: handle PVC resize
+	// Resize the PVC if needed
+	if pvc.Spec.Resources.Requests[v1.ResourceStorage] != q.Spec.Volume.Size {
+		pvc.Spec.Resources.Requests = v1.ResourceList{
+			v1.ResourceStorage: q.Spec.Volume.Size,
+		}
+		if err = r.Update(ctx, &pvc); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	// Reconcile the StatefulSet
 	sts, err := r.buildStatefulSet(q)
@@ -114,7 +122,13 @@ func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	// todo: handle statefulset updates
+	// Update the StatefulSet image if needed
+	if sts.Spec.Template.Spec.Containers[0].Image != q.Spec.Image {
+		sts.Spec.Template.Spec.Containers[0].Image = q.Spec.Image
+		if err = r.Update(ctx, &sts); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	// Reconcile the Service
 	svc, err := r.buildService(q)
