@@ -29,7 +29,7 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
 # questdb.io/questdb-operator-bundle:$VERSION and questdb.io/questdb-operator-catalog:$VERSION.
-IMAGE_TAG_BASE ?= questdb.io/questdb-operator
+IMAGE_TAG_BASE ?= sklarsa/questdb-operator
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
@@ -47,7 +47,7 @@ ifeq ($(USE_IMAGE_DIGESTS), true)
 endif
 
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= $(IMAGE_TAG_BASE):$(VERSION)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.26.0
 
@@ -101,20 +101,20 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
-.PHONY: install-test-crds
-install-test-crds:
+.PHONY: download-test-crds
+download-test-crds:
 	@if ! test -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshotclasses.yaml ; then \
 		curl -O --create-dirs --output-dir $(TEST_CRD_DIR) $(REMOTE_SNAPSHOTTER_CRD_PATH)/snapshot.storage.k8s.io_volumesnapshotclasses.yaml ; \
 	fi
-	@if ! test -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshotclasses.yaml ; then \
+	@if ! test -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshotcontents.yaml ; then \
 		curl -O --create-dirs --output-dir $(TEST_CRD_DIR) $(REMOTE_SNAPSHOTTER_CRD_PATH)/snapshot.storage.k8s.io_volumesnapshotcontents.yaml ; \
 	fi
-	@if ! test -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshotclasses.yaml ; then \
+	@if ! test -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshots.yaml ; then \
 		curl -O --create-dirs --output-dir $(TEST_CRD_DIR) $(REMOTE_SNAPSHOTTER_CRD_PATH)/snapshot.storage.k8s.io_volumesnapshots.yaml ; \
 	fi
 
 .PHONY: test
-test: install-test-crds manifests generate fmt vet envtest ## Run tests.
+test: download-test-crds manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out && go tool cover -func=cover.out
 
 ##@ Build
@@ -270,7 +270,31 @@ endif
 catalog-build: opm ## Build a catalog image.
 	$(OPM) index add --container-tool docker --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
 
+
+KIND_CLUSTER ?= questdb-operator
+
 # Push the catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
+
+.PHONY: kind-create
+kind-create: docker-build download-test-crds
+	kind create cluster --name $(KIND_CLUSTER)
+
+.PHONY: kind-provision
+kind-provision: kind-create docker-build download-test-crds
+	kind load docker-image $(IMG) --name $(KIND_CLUSTER)
+	kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.12.0/cert-manager.yaml
+	kubectl apply -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshotclasses.yaml
+	kubectl apply -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshotcontents.yaml
+	kubectl apply -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshots.yaml
+	echo "Waiting for cert-manager to be ready..."
+	sleep 40
+
+.PHONY: kind-deploy
+kind-deploy: kind-provision deploy
+
+.PHONY: kind-clean
+kind-clean:
+	kind delete cluster --name $(KIND_CLUSTER)

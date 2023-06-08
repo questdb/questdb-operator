@@ -34,6 +34,17 @@ func (r *QuestDBSnapshot) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 // TODO(user): EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 
+//+kubebuilder:webhook:path=/mutate-crd-questdb-io-v1beta1-questdbsnapshot,mutating=true,failurePolicy=fail,sideEffects=None,groups=crd.questdb.io,resources=questdbsnapshots,verbs=create;update,versions=v1beta1,name=mquestdbsnapshot.kb.io,admissionReviewVersions=v1
+
+var _ webhook.Defaulter = &QuestDBSnapshot{}
+
+// Default implements webhook.Defaulter so a webhook will be registered for the type
+func (r *QuestDBSnapshot) Default() {
+	questdbsnapshotlog.Info("default", "name", r.Name)
+
+	// todo: add spec field and defaulting check for max job retries
+}
+
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
 //+kubebuilder:webhook:path=/validate-crd-questdb-io-v1beta1-questdbsnapshot,mutating=false,failurePolicy=fail,sideEffects=None,groups=crd.questdb.io,resources=questdbsnapshots,verbs=create;update,versions=v1beta1,name=vquestdbsnapshot.kb.io,admissionReviewVersions=v1
 

@@ -28,8 +28,6 @@ import (
 
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 
-	batchv1 "k8s.io/api/batch/v1"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -65,8 +63,6 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 func (r *QuestDBSnapshotScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&crdv1beta1.QuestDBSnapshotSchedule{}).
-		Owns(&batchv1.CronJob{}).
-		Owns(&v1.ConfigMap{}).
 		Owns(&crdv1beta1.QuestDBSnapshot{}).
 		Complete(r)
 }
