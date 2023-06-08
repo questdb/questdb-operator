@@ -8,9 +8,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -19,64 +16,22 @@ import (
 
 var _ = Describe("QuestDBSnapshot Controller", func() {
 	var (
-		q *crdv1beta1.QuestDB
-
 		timeout  = time.Second * 2
 		interval = time.Millisecond * 100
 	)
 
-	Context("When a QuestDBSnapshot is created", Ordered, func() {
+	Context("When a QuestDBSnapshot is created (golden path)", Ordered, func() {
 		var (
-			snap    = &crdv1beta1.QuestDBSnapshot{}
+			q    *crdv1beta1.QuestDB
+			snap *crdv1beta1.QuestDBSnapshot
+
 			job     = &batchv1.Job{}
 			volSnap = &volumesnapshotv1.VolumeSnapshot{}
 		)
 
 		BeforeAll(func() {
-			var (
-				name = "test-snapshot"
-				ns   = fmt.Sprintf("test-ns-%d", time.Now().UnixNano())
-			)
-
-			By("Creating a namespace")
-			Expect(k8sClient.Create(ctx, &v1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: ns,
-				},
-			})).To(Succeed())
-
-			By("Creating a QuestDB")
-			q = &crdv1beta1.QuestDB{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      name,
-					Namespace: ns,
-					Labels: map[string]string{
-						"app": "questdb",
-					},
-				},
-				Spec: crdv1beta1.QuestDBSpec{
-					Volume: crdv1beta1.QuestDBVolumeSpec{
-						Size: resource.MustParse("1Gi"),
-					},
-					Image: "questdb/questdb:latest",
-				},
-			}
-			Expect(k8sClient.Create(ctx, q)).To(Succeed())
-
-			By("Creating a QuestDBSnapshot")
-			snap = &crdv1beta1.QuestDBSnapshot{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("%s-%s", q.Name, time.Now().Format("20060102150405")),
-					Namespace: q.Namespace,
-					Labels:    q.Labels,
-				},
-				Spec: crdv1beta1.QuestDBSnapshotSpec{
-					QuestDB:             q.Name,
-					VolumeSnapshotClass: "csi-hostpath-snapclass",
-				},
-			}
-
-			Expect(k8sClient.Create(ctx, snap)).To(Succeed())
+			q = buildMockQuestDB()
+			snap = buildMockQuestDBSnapshot(q)
 		})
 
 		It("Should create a pre-snapshot job when a QuestDBSnapshot is created", func() {
@@ -119,7 +74,6 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
 				g.Expect(q.Finalizers).To(ContainElement(crdv1beta1.QuestDBSnapshotProtectionFinalizer))
 			}, timeout, interval).Should(Succeed())
-
 		})
 
 		It("Should create a VolumeSnapshot once the pre-snapshot job is complete", func() {
@@ -173,8 +127,162 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 			}, 1*time.Second, interval).Should(Succeed())
 		})
 
-		// todo: finish these tests
+		It("Should create a post-snapshot job once the VolumeSnapshot is ready", func() {
 
+			By("Setting the ready to use condition to true")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+					Name:      volSnap.Name,
+					Namespace: volSnap.Namespace,
+				}, volSnap)).Should(Succeed())
+				if volSnap.Status == nil {
+					volSnap.Status = &volumesnapshotv1.VolumeSnapshotStatus{}
+				}
+				volSnap.Status.ReadyToUse = pointer.Bool(true)
+				g.Expect(k8sClient.Status().Update(ctx, volSnap)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("Waiting for the phase to be set to SnapshotFinalizing")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+					Name:      snap.Name,
+					Namespace: snap.Namespace,
+				}, snap)).Should(Succeed())
+
+				g.Expect(snap.Status.Phase).Should(Equal(crdv1beta1.SnapshotFinalizing))
+			}, timeout, interval).Should(Succeed())
+
+			By("Checking if a post-snapshot job is created")
+			Eventually(func() error {
+				return k8sClient.Get(ctx, client.ObjectKey{
+					Name:      fmt.Sprintf("%s-post-snapshot", snap.Name),
+					Namespace: snap.Namespace,
+				}, job)
+			}, timeout, interval).Should(Succeed())
+
+		})
+
+		It("Should set the phase to SnapshotSucceeded once the post-snapshot job is complete", func() {
+			By("Setting the post-snapshot job to complete")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+					Name:      job.Name,
+					Namespace: job.Namespace,
+				}, job)).To(Succeed())
+				job.Status.Succeeded = 1
+				g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("Checking if the phase is set to SnapshotSucceeded")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+					Name:      snap.Name,
+					Namespace: snap.Namespace,
+				}, snap)).Should(Succeed())
+
+				g.Expect(snap.Status.Phase).Should(Equal(crdv1beta1.SnapshotSucceeded))
+			}, timeout, interval).Should(Succeed())
+		})
+
+	})
+
+	Context("failure cases", func() {
+		var (
+			q    *crdv1beta1.QuestDB
+			snap *crdv1beta1.QuestDBSnapshot
+		)
+
+		When("a pre snapshot job fails", Ordered, func() {
+			var (
+				job = &batchv1.Job{}
+			)
+			BeforeAll(func() {
+				q = buildMockQuestDB()
+				snap = buildMockQuestDBSnapshot(q)
+			})
+
+			It("Should set the phase to SnapshotFailed", func() {
+				By("Waiting for the pre-snapshot job to be created")
+				Eventually(func() error {
+					return k8sClient.Get(ctx, client.ObjectKey{
+						Name:      fmt.Sprintf("%s-pre-snapshot", snap.Name),
+						Namespace: snap.Namespace,
+					}, job)
+				}, timeout, interval).Should(Succeed())
+
+				By("Setting the failure condition on the pre-snapshot job")
+				job.Status.Failed = jobBackoffLimit
+				Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+
+				By("Checking if the phase is set to SnapshotFailed")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+						Name:      snap.Name,
+						Namespace: snap.Namespace,
+					}, snap)).Should(Succeed())
+
+					g.Expect(snap.Status.Phase).Should(Equal(crdv1beta1.SnapshotFailed))
+				}, timeout, interval).Should(Succeed())
+			})
+
+			It("Should not remove the snapshot protection finalizer from the QuestDB", func() {
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
+					g.Expect(q.Finalizers).To(ContainElement(crdv1beta1.QuestDBSnapshotProtectionFinalizer))
+				}, timeout, interval).Should(Succeed())
+			})
+
+		})
+
+		When("a post snapshot job fails", Ordered, func() {
+			var (
+				job = &batchv1.Job{}
+			)
+
+			BeforeAll(func() {
+				q = buildMockQuestDB()
+				snap = buildMockQuestDBSnapshot(q)
+			})
+
+			It("Should set the phase to SnapshotFailed", func() {
+				By("Setting the phase to SnapshotFinalizing")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+						Name:      snap.Name,
+						Namespace: snap.Namespace,
+					}, snap)).Should(Succeed())
+					snap.Status.Phase = crdv1beta1.SnapshotFinalizing
+					g.Expect(k8sClient.Status().Update(ctx, snap)).To(Succeed())
+				}, timeout, interval).Should(Succeed())
+
+				By("Waiting for the post-snapshot job to be created")
+				Eventually(func() error {
+					return k8sClient.Get(ctx, client.ObjectKey{
+						Name:      fmt.Sprintf("%s-post-snapshot", snap.Name),
+						Namespace: snap.Namespace,
+					}, job)
+				}, timeout, interval).Should(Succeed())
+
+				By("Setting the failure condition on the post-snapshot job")
+				job.Status.Failed = jobBackoffLimit
+				Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+
+				By("Checking if the phase is set to SnapshotFailed")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+						Name:      snap.Name,
+						Namespace: snap.Namespace,
+					}, snap)).Should(Succeed())
+
+					g.Expect(snap.Status.Phase).Should(Equal(crdv1beta1.SnapshotFailed))
+				}, timeout, interval).Should(Succeed())
+			})
+		})
+
+	})
+
+	Context("finalizer tests", func() {
+		// todo: implement these
 	})
 
 })

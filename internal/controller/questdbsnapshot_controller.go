@@ -437,9 +437,10 @@ func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, s
 			return ctrl.Result{}, err
 		}
 		r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotFailed", "Error running 'SNAPSHOT COMPLETE' in job %s", job.Name)
+		return ctrl.Result{}, err
 	}
 
-	// Remove the snapshot protection finalizer from the questdb
+	// If everything is good, remove the snapshot protection finalizer from the questdb
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		questdb := &crdv1beta1.QuestDB{}
 		err = r.Get(ctx, client.ObjectKey{Name: snap.Spec.QuestDB, Namespace: snap.Namespace}, questdb)
