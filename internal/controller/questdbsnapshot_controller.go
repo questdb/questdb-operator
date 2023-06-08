@@ -231,6 +231,12 @@ func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *c
 
 				// If the job has succeeded, we need to finalize the snapshot
 				if job.Status.Succeeded == 1 {
+					snap.Status.Phase = crdv1beta1.SnapshotFinalizing
+					err = r.Status().Update(ctx, snap)
+					if err != nil {
+						return ctrl.Result{}, err
+					}
+					r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotFinalizing", "Snapshot %s is cleaning", snap.Name)
 					return r.handlePhaseFinalizing(ctx, snap)
 				}
 
@@ -255,6 +261,7 @@ func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *c
 
 			case crdv1beta1.SnapshotRunning:
 				// todo: wait for it to finish?
+				return ctrl.Result{}, nil
 			case crdv1beta1.SnapshotFinalizing:
 				// Check the status of the post-snapshot job
 				job := &batchv1.Job{}

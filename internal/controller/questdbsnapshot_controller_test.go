@@ -11,13 +11,16 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 )
 
 var _ = Describe("QuestDBSnapshot Controller", func() {
 	var (
-		timeout  = time.Second * 2
-		interval = time.Millisecond * 100
+		timeout            = time.Second * 2
+		consistencyTimeout = time.Millisecond * 600
+		interval           = time.Millisecond * 100
 	)
 
 	Context("When a QuestDBSnapshot is created (golden path)", Ordered, func() {
@@ -66,7 +69,7 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 				}, snap)).Should(Succeed())
 				g.Expect(snap.Status.Phase).Should(Equal(crdv1beta1.SnapshotPending))
 
-			}, 1*time.Second, interval).Should(Succeed())
+			}, consistencyTimeout, interval).Should(Succeed())
 		})
 
 		It("Should add the snapshot protection finalizer to the QuestDB", func() {
@@ -124,7 +127,7 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 				} else {
 					g.Expect(*volSnap.Status.ReadyToUse).Should(BeFalse())
 				}
-			}, 1*time.Second, interval).Should(Succeed())
+			}, consistencyTimeout, interval).Should(Succeed())
 		})
 
 		It("Should create a post-snapshot job once the VolumeSnapshot is ready", func() {
@@ -282,7 +285,257 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 	})
 
 	Context("finalizer tests", func() {
-		// todo: implement these
+		var (
+			snap *crdv1beta1.QuestDBSnapshot
+		)
+
+		BeforeEach(func() {
+			snap = buildMockQuestDBSnapshot(buildMockQuestDB())
+
+			By("Waiting for the finalizer to be added")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+				g.Expect(snap.Finalizers).To(ContainElement(crdv1beta1.QuestDBSnapshotFinalizer))
+			}, timeout, interval).Should(Succeed())
+
+		})
+
+		It("Should not delete the snapshot finalizer if the snapshot has failed", func() {
+			By("Setting the phase to SnapshotFailed")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+				snap.Status.Phase = crdv1beta1.SnapshotFailed
+				g.Expect(k8sClient.Status().Update(ctx, snap)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("Deleting the QuestDBSnapshot")
+			Expect(k8sClient.Delete(ctx, snap)).To(Succeed())
+
+			By("Checking if the snapshot finalizer is still present")
+			Consistently(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+				g.Expect(snap.Finalizers).To(ContainElement(crdv1beta1.QuestDBSnapshotFinalizer))
+			}, consistencyTimeout, interval).Should(Succeed())
+		})
+
+		It("Should delete the snapshot finalizer if the snapshot has succeeded", func() {
+			By("Setting the phase to SnapshotSucceeded")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+				snap.Status.Phase = crdv1beta1.SnapshotSucceeded
+				g.Expect(k8sClient.Status().Update(ctx, snap)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("Deleting the QuestDBSnapshot")
+			Expect(k8sClient.Delete(ctx, snap)).To(Succeed())
+
+			By("Checking if the snapshot finalizer is removed")
+			Eventually(func(g Gomega) {
+				err := k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)
+				if !apierrors.IsNotFound(err) {
+					g.Expect(err).To(Succeed())
+					g.Expect(snap.Finalizers).NotTo(ContainElement(crdv1beta1.QuestDBSnapshotFinalizer))
+				}
+			}, timeout, interval).Should(Succeed())
+		})
+
+		It("Should not delete the snapshot finalizer if the snapshot is running", func() {
+			By("Setting the phase to SnapshotRunning")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+				snap.Status.Phase = crdv1beta1.SnapshotRunning
+				g.Expect(k8sClient.Status().Update(ctx, snap)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("Deleting the QuestDBSnapshot")
+			Expect(k8sClient.Delete(ctx, snap)).To(Succeed())
+
+			By("Checking if the snapshot finalizer is still present")
+			Consistently(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+				g.Expect(snap.Finalizers).To(ContainElement(crdv1beta1.QuestDBSnapshotFinalizer))
+			}, consistencyTimeout, interval).Should(Succeed())
+		})
+
+		Context("If a snapshot is finalizing", func() {
+			var (
+				job = &batchv1.Job{}
+			)
+			BeforeEach(func() {
+				Eventually(func(g Gomega) {
+					By("Setting the phase to SnapshotFinalizing")
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+					snap.Status.Phase = crdv1beta1.SnapshotFinalizing
+					g.Expect(k8sClient.Status().Update(ctx, snap)).To(Succeed())
+				}, timeout, interval).Should(Succeed())
+
+				By("Waiting for the post-snapshot job to be created")
+				Eventually(func() error {
+					return k8sClient.Get(ctx, client.ObjectKey{
+						Name:      fmt.Sprintf("%s-post-snapshot", snap.Name),
+						Namespace: snap.Namespace,
+					}, job)
+				}, timeout, interval).Should(Succeed())
+
+				By("Deleting the QuestDBSnapshot")
+				Expect(k8sClient.Delete(ctx, snap)).To(Succeed())
+			})
+
+			It("Should not delete the snapshot finalizer if the snapshot is in the finalizing phase, until the post-snapshot job is complete", func() {
+
+				By("Checking if the snapshot finalizer is still present")
+				Consistently(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+					g.Expect(snap.Finalizers).To(ContainElement(crdv1beta1.QuestDBSnapshotFinalizer))
+				}, consistencyTimeout, interval).Should(Succeed())
+
+				By("Incrementing the post-snapshot job failure count")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job)).To(Succeed())
+					job.Status.Failed = jobBackoffLimit - 1
+					g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+				}, timeout, interval).Should(Succeed())
+
+				By("Checking if the snapshot finalizer is still present")
+				Consistently(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+					g.Expect(snap.Finalizers).To(ContainElement(crdv1beta1.QuestDBSnapshotFinalizer))
+				}, consistencyTimeout, interval).Should(Succeed())
+
+				By("Incrementing the post-snapshot job active count")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job)).To(Succeed())
+					job.Status.Active = 1
+					g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+				}, timeout, interval).Should(Succeed())
+
+				By("Checking if the snapshot finalizer is still present")
+				Consistently(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+					g.Expect(snap.Finalizers).To(ContainElement(crdv1beta1.QuestDBSnapshotFinalizer))
+				}, consistencyTimeout, interval).Should(Succeed())
+
+				By("Setting the post-snapshot failure count to the backoff limit")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job)).To(Succeed())
+					job.Status.Failed = jobBackoffLimit
+					g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+				}, timeout, interval).Should(Succeed())
+
+				By("Checking if the snapshot finalizer is still present")
+				Consistently(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+					g.Expect(snap.Finalizers).To(ContainElement(crdv1beta1.QuestDBSnapshotFinalizer))
+				}, consistencyTimeout, interval).Should(Succeed())
+
+				By("Setting the post-snapshot job to complete")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job)).To(Succeed())
+					job.Status.Succeeded = 1
+					g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+				}, timeout, interval).Should(Succeed())
+
+				By("Checking if the snapshot finalizer is removed")
+				Eventually(func(g Gomega) {
+					err := k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)
+					if !apierrors.IsNotFound(err) {
+						g.Expect(err).To(Succeed())
+						g.Expect(snap.Finalizers).NotTo(ContainElement(crdv1beta1.QuestDBSnapshotFinalizer))
+					}
+				}, timeout, interval).Should(Succeed())
+
+			})
+
+		})
+
+		Context("If a snapshot is pending", func() {
+			var (
+				job = &batchv1.Job{}
+			)
+			BeforeEach(func() {
+				Eventually(func(g Gomega) {
+					By("Setting the phase to SnapshotPending")
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+					snap.Status.Phase = crdv1beta1.SnapshotPending
+					g.Expect(k8sClient.Status().Update(ctx, snap)).To(Succeed())
+				}, timeout, interval).Should(Succeed())
+
+				By("Waiting for the pre-snapshot job to be created")
+				Eventually(func() error {
+					return k8sClient.Get(ctx, client.ObjectKey{
+						Name:      fmt.Sprintf("%s-pre-snapshot", snap.Name),
+						Namespace: snap.Namespace,
+					}, job)
+				}, timeout, interval).Should(Succeed())
+
+				By("Deleting the QuestDBSnapshot")
+				Expect(k8sClient.Delete(ctx, snap)).To(Succeed())
+			})
+
+			It("Should not delete the snapshot finalizer if the pre-snapshot job is not completed", func() {
+
+				By("Checking if the snapshot finalizer is still present")
+				Consistently(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+					g.Expect(snap.Finalizers).To(ContainElement(crdv1beta1.QuestDBSnapshotFinalizer))
+				}, consistencyTimeout, interval).Should(Succeed())
+
+				By("Incrementing the pre-snapshot job failure count")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job)).To(Succeed())
+					job.Status.Failed = jobBackoffLimit - 1
+					g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+				}, timeout, interval).Should(Succeed())
+
+				By("Checking if the snapshot finalizer is still present")
+				Consistently(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+					g.Expect(snap.Finalizers).To(ContainElement(crdv1beta1.QuestDBSnapshotFinalizer))
+				}, consistencyTimeout, interval).Should(Succeed())
+
+				By("Incrementing the pre-snapshot job active count")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job)).To(Succeed())
+					job.Status.Active = 1
+					g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+				}, timeout, interval).Should(Succeed())
+
+				By("Checking if the snapshot finalizer is still present")
+				Consistently(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+					g.Expect(snap.Finalizers).To(ContainElement(crdv1beta1.QuestDBSnapshotFinalizer))
+				}, consistencyTimeout, interval).Should(Succeed())
+
+				By("Setting the pre-snapshot failure count to the backoff limit")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job)).To(Succeed())
+					job.Status.Failed = jobBackoffLimit
+					g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+				}, timeout, interval).Should(Succeed())
+
+				By("Checking if the snapshot finalizer is still present")
+				Consistently(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+					g.Expect(snap.Finalizers).To(ContainElement(crdv1beta1.QuestDBSnapshotFinalizer))
+				}, consistencyTimeout, interval).Should(Succeed())
+			})
+
+			It("Should migrate the phase directly to finalizing once the pre-snapshot job is complete", func() {
+				By("Setting the pre-snapshot job to complete")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: fmt.Sprintf("%s-pre-snapshot", snap.Name), Namespace: snap.Namespace}, job)).To(Succeed())
+					job.Status.Succeeded = 1
+					g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+				}, timeout, interval).Should(Succeed())
+
+				By("Checking if the phase is set to SnapshotFinalizing")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+					g.Expect(snap.Status.Phase).To(Equal(crdv1beta1.SnapshotFinalizing))
+				}, timeout, interval).Should(Succeed())
+			})
+
+		})
 	})
 
 })
