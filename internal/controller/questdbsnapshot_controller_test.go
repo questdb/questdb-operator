@@ -244,7 +244,7 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 				}, timeout, interval).Should(Succeed())
 
 				By("Setting the failure condition on the pre-snapshot job")
-				job.Status.Failed = jobBackoffLimit
+				job.Status.Failed = snap.Spec.JobBackoffLimit
 				Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
 
 				By("Checking if the phase is set to SnapshotFailed")
@@ -297,7 +297,7 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 				}, timeout, interval).Should(Succeed())
 
 				By("Setting the failure condition on the post-snapshot job")
-				job.Status.Failed = jobBackoffLimit
+				job.Status.Failed = snap.Spec.JobBackoffLimit
 				Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
 
 				By("Checking if the phase is set to SnapshotFailed")
@@ -422,7 +422,7 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 				By("Incrementing the post-snapshot job failure count")
 				Eventually(func(g Gomega) {
 					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job)).To(Succeed())
-					job.Status.Failed = jobBackoffLimit - 1
+					job.Status.Failed = snap.Spec.JobBackoffLimit - 1
 					g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
 				}, timeout, interval).Should(Succeed())
 
@@ -448,7 +448,7 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 				By("Setting the post-snapshot failure count to the backoff limit")
 				Eventually(func(g Gomega) {
 					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job)).To(Succeed())
-					job.Status.Failed = jobBackoffLimit
+					job.Status.Failed = snap.Spec.JobBackoffLimit
 					g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
 				}, timeout, interval).Should(Succeed())
 
@@ -513,7 +513,7 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 				By("Incrementing the pre-snapshot job failure count")
 				Eventually(func(g Gomega) {
 					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job)).To(Succeed())
-					job.Status.Failed = jobBackoffLimit - 1
+					job.Status.Failed = snap.Spec.JobBackoffLimit - 1
 					g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
 				}, timeout, interval).Should(Succeed())
 
@@ -539,7 +539,7 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 				By("Setting the pre-snapshot failure count to the backoff limit")
 				Eventually(func(g Gomega) {
 					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job)).To(Succeed())
-					job.Status.Failed = jobBackoffLimit
+					job.Status.Failed = snap.Spec.JobBackoffLimit
 					g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
 				}, timeout, interval).Should(Succeed())
 

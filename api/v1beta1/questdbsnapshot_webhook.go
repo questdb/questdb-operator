@@ -17,10 +17,16 @@ limitations under the License.
 package v1beta1
 
 import (
+	"errors"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+)
+
+const (
+	JobBackoffLimitDefault = 5
 )
 
 // log is for logging in this package.
@@ -32,8 +38,6 @@ func (r *QuestDBSnapshot) SetupWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// TODO(user): EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-
 //+kubebuilder:webhook:path=/mutate-crd-questdb-io-v1beta1-questdbsnapshot,mutating=true,failurePolicy=fail,sideEffects=None,groups=crd.questdb.io,resources=questdbsnapshots,verbs=create;update,versions=v1beta1,name=mquestdbsnapshot.kb.io,admissionReviewVersions=v1
 
 var _ webhook.Defaulter = &QuestDBSnapshot{}
@@ -42,7 +46,9 @@ var _ webhook.Defaulter = &QuestDBSnapshot{}
 func (r *QuestDBSnapshot) Default() {
 	questdbsnapshotlog.Info("default", "name", r.Name)
 
-	// todo: add spec field and defaulting check for max job retries
+	if r.Spec.JobBackoffLimit == 0 {
+		r.Spec.JobBackoffLimit = JobBackoffLimitDefault
+	}
 }
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
@@ -54,10 +60,18 @@ var _ webhook.Validator = &QuestDBSnapshot{}
 func (r *QuestDBSnapshot) ValidateCreate() error {
 	questdbsnapshotlog.Info("validate create", "name", r.Name)
 
-	// todo: Check that the questdb exists
-	// todo: Check thast the snapshotclass exists
+	if r.Spec.QuestDBName == "" {
+		return errors.New("QuestDBName is required")
+	}
 
-	// TODO(user): fill in your validation logic upon object creation.
+	if r.Spec.VolumeSnapshotClassName == "" {
+		return errors.New("VolumeSnapshotClassName is required")
+	}
+
+	if r.Spec.JobBackoffLimit <= 0 {
+		return errors.New("JobBackoffLimit must be greater than 0")
+	}
+
 	return nil
 }
 
@@ -65,7 +79,23 @@ func (r *QuestDBSnapshot) ValidateCreate() error {
 func (r *QuestDBSnapshot) ValidateUpdate(old runtime.Object) error {
 	questdbsnapshotlog.Info("validate update", "name", r.Name)
 
-	// TODO(user): fill in your validation logic upon object update.
+	oldSnap, valid := old.(*QuestDBSnapshot)
+	if !valid {
+		return errors.New("old object is not a QuestDBSnapshot")
+	}
+
+	if r.Spec.QuestDBName != oldSnap.Spec.QuestDBName {
+		return errors.New("QuestDBName is immutable")
+	}
+
+	if r.Spec.VolumeSnapshotClassName != oldSnap.Spec.VolumeSnapshotClassName {
+		return errors.New("VolumeSnapshotClassName is immutable")
+	}
+
+	if r.Spec.JobBackoffLimit != oldSnap.Spec.JobBackoffLimit {
+		return errors.New("JobBackoffLimit is immutable")
+	}
+
 	return nil
 }
 
@@ -73,6 +103,7 @@ func (r *QuestDBSnapshot) ValidateUpdate(old runtime.Object) error {
 func (r *QuestDBSnapshot) ValidateDelete() error {
 	questdbsnapshotlog.Info("validate delete", "name", r.Name)
 
-	// TODO(user): fill in your validation logic upon object deletion.
+	// Nothing to do here. Finalizers handle the deletion process
+
 	return nil
 }

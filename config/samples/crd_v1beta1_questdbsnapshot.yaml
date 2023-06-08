@@ -9,5 +9,5 @@ metadata:
     app.kubernetes.io/created-by: questdb-operator
   name: questdbsnapshot-sample
 spec:
-  questdb: questdb-sample
-  volumeSnapshotClass: csi-ebs-snapclass
+  questdbName: questdb-sample
+  volumeSnapshotClassName: csi-ebs-snapclass

@@ -42,13 +42,16 @@ spec:
           spec:
             description: QuestDBSnapshotSpec defines the desired state of QuestDBSnapshot
             properties:
-              questdb:
+              jobBackoffLimit:
+                format: int32
+                type: integer
+              questdbName:
                 type: string
-              volumeSnapshotClass:
+              volumeSnapshotClassName:
                 type: string
             required:
-            - questdb
-            - volumeSnapshotClass
+            - questdbName
+            - volumeSnapshotClassName
             type: object
           status:
             description: QuestDBSnapshotStatus defines the observed state of QuestDBSnapshot

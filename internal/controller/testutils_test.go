@@ -58,8 +58,9 @@ func buildMockQuestDBSnapshot(q *crdv1beta1.QuestDB) *crdv1beta1.QuestDBSnapshot
 			Labels:    q.Labels,
 		},
 		Spec: crdv1beta1.QuestDBSnapshotSpec{
-			QuestDB:             q.Name,
-			VolumeSnapshotClass: "csi-hostpath-snapclass",
+			QuestDBName:             q.Name,
+			VolumeSnapshotClassName: "csi-hostpath-snapclass",
+			JobBackoffLimit:         5,
 		},
 	}
 
@@ -78,9 +79,9 @@ func buildMockVolumeSnapshot(snap *crdv1beta1.QuestDBSnapshot) *volumesnapshotv1
 		},
 		Spec: volumesnapshotv1.VolumeSnapshotSpec{
 			Source: volumesnapshotv1.VolumeSnapshotSource{
-				PersistentVolumeClaimName: pointer.String(snap.Spec.QuestDB),
+				PersistentVolumeClaimName: pointer.String(snap.Spec.QuestDBName),
 			},
-			VolumeSnapshotClassName: pointer.String(snap.Spec.VolumeSnapshotClass),
+			VolumeSnapshotClassName: pointer.String(snap.Spec.VolumeSnapshotClassName),
 		},
 	}
 

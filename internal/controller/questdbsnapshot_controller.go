@@ -123,7 +123,7 @@ func (r *QuestDBSnapshotReconciler) buildGenericSnapshotJob(snap *crdv1beta1.Que
 		},
 		Spec: batchv1.JobSpec{
 			Completions:  pointer.Int32(1),
-			BackoffLimit: pointer.Int32(jobBackoffLimit + 2), // adding a few extra attempts to ensure that we hit the reconciler to fail the snapshot
+			BackoffLimit: pointer.Int32(snap.Spec.JobBackoffLimit + 2), // adding a few extra attempts to ensure that we hit the reconciler to fail the snapshot
 			Template: v1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("%s-%s", snap.Name, nameSuffix),
@@ -143,7 +143,7 @@ func (r *QuestDBSnapshotReconciler) buildGenericSnapshotJob(snap *crdv1beta1.Que
 							Env: []v1.EnvVar{
 								{
 									Name:  "PGHOST",
-									Value: fmt.Sprintf("%s.%s.svc.cluster.local", snap.Spec.QuestDB, snap.Namespace),
+									Value: fmt.Sprintf("%s.%s.svc.cluster.local", snap.Spec.QuestDBName, snap.Namespace),
 								},
 								{
 									Name:  "PGUSER",
@@ -185,23 +185,19 @@ func (r *QuestDBSnapshotReconciler) buildVolumeSnapshot(snap *crdv1beta1.QuestDB
 		},
 		Spec: volumesnapshotv1.VolumeSnapshotSpec{
 			Source: volumesnapshotv1.VolumeSnapshotSource{
-				PersistentVolumeClaimName: pointer.String(snap.Spec.QuestDB),
+				PersistentVolumeClaimName: pointer.String(snap.Spec.QuestDBName),
 			},
 		},
 	}
 
-	if snap.Spec.VolumeSnapshotClass != "" {
-		volSnap.Spec.VolumeSnapshotClassName = pointer.String(snap.Spec.VolumeSnapshotClass)
+	if snap.Spec.VolumeSnapshotClassName != "" {
+		volSnap.Spec.VolumeSnapshotClassName = pointer.String(snap.Spec.VolumeSnapshotClassName)
 	}
 
 	err = ctrl.SetControllerReference(snap, &volSnap, r.Scheme)
 	return volSnap, err
 
 }
-
-const (
-	jobBackoffLimit = 5
-)
 
 // handleFinalizer is guaranteed to run before any other reconciliation logic
 func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
@@ -237,7 +233,7 @@ func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *c
 					if err != nil {
 						return ctrl.Result{}, err
 					}
-					r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotFinalizing", "Snapshot %s is cleaning", snap.Name)
+					r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotFinalizing", "Running 'SNAPSHOT COMPLETE;' for snapshot %s", snap.Name)
 					return r.handlePhaseFinalizing(ctx, snap)
 				}
 
@@ -247,12 +243,12 @@ func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *c
 				}
 
 				// If the job is not active, but there are still more attempts, we need to requeue
-				if job.Status.Active == 0 && job.Status.Failed < jobBackoffLimit {
+				if job.Status.Active == 0 && job.Status.Failed < snap.Spec.JobBackoffLimit {
 					return ctrl.Result{RequeueAfter: 4 * time.Second}, nil
 				}
 
 				// If we've reached the maximum number of attempts, fail the snapshot
-				if job.Status.Failed >= jobBackoffLimit {
+				if job.Status.Failed >= snap.Spec.JobBackoffLimit {
 					snap.Status.Phase = crdv1beta1.SnapshotFailed
 					err = r.Status().Update(ctx, snap)
 					r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotFailed", "Error running 'SNAPSHOT PREPARE' in job %s", job.Name)
@@ -287,12 +283,12 @@ func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *c
 				}
 
 				// If the job is not active, but there are still more attempts, we need to requeue
-				if job.Status.Active == 0 && job.Status.Failed < jobBackoffLimit {
+				if job.Status.Active == 0 && job.Status.Failed < snap.Spec.JobBackoffLimit {
 					return ctrl.Result{RequeueAfter: 4 * time.Second}, nil
 				}
 
 				// If we've reached the maximum number of attempts, fail the snapshot
-				if job.Status.Failed >= jobBackoffLimit {
+				if job.Status.Failed >= snap.Spec.JobBackoffLimit {
 					snap.Status.Phase = crdv1beta1.SnapshotFailed
 					err = r.Status().Update(ctx, snap)
 					r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotFailed", "Error running 'SNAPSHOT COMPLETE' in job %s", job.Name)
@@ -321,7 +317,7 @@ func (r *QuestDBSnapshotReconciler) handlePhaseEmpty(ctx context.Context, snap *
 	if err := r.Status().Update(ctx, snap); err != nil {
 		return ctrl.Result{}, err
 	}
-	r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotPending", "Snapshot %s is pending", snap.Name)
+	r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotPending", "Running 'SNAPSHOT PREPARE;' for snapshot %s", snap.Name)
 	return ctrl.Result{}, nil
 }
 
@@ -331,7 +327,7 @@ func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 
 		questdb := &crdv1beta1.QuestDB{}
-		err := r.Get(ctx, client.ObjectKey{Name: snap.Spec.QuestDB, Namespace: snap.Namespace}, questdb)
+		err := r.Get(ctx, client.ObjectKey{Name: snap.Spec.QuestDBName, Namespace: snap.Namespace}, questdb)
 		if err != nil {
 			return err
 		}
@@ -371,7 +367,7 @@ func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap
 	}
 
 	// If we've reached the maximum number of attempts, fail the snapshot
-	if job.Status.Failed >= jobBackoffLimit {
+	if job.Status.Failed >= snap.Spec.JobBackoffLimit {
 		snap.Status.Phase = crdv1beta1.SnapshotFailed
 		err = r.Status().Update(ctx, snap)
 		r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotFailed", "Error running 'SNAPSHOT PREPARE' in job %s", job.Name)
@@ -402,7 +398,7 @@ func (r *QuestDBSnapshotReconciler) handlePhaseRunning(ctx context.Context, snap
 		if err = r.Status().Update(ctx, snap); err != nil {
 			return ctrl.Result{}, err
 		}
-		r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotFinalizing", "Snapshot %s is cleaning", snap.Name)
+		r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotFinalizing", "Running 'SNAPSHOT COMPLETE;' for snapshot %s", snap.Name)
 
 	}
 
@@ -439,7 +435,7 @@ func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, s
 
 	// If we've reached the maximum number of attempts, fail the snapshot
 	// todo: this is serious, since we are unable to take another snapshot without manual database action
-	if job.Status.Failed >= jobBackoffLimit {
+	if job.Status.Failed >= snap.Spec.JobBackoffLimit {
 		snap.Status.Phase = crdv1beta1.SnapshotFailed
 		err = r.Status().Update(ctx, snap)
 		if err != nil {
@@ -452,7 +448,7 @@ func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, s
 	// If everything is good, remove the snapshot protection finalizer from the questdb
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		questdb := &crdv1beta1.QuestDB{}
-		err = r.Get(ctx, client.ObjectKey{Name: snap.Spec.QuestDB, Namespace: snap.Namespace}, questdb)
+		err = r.Get(ctx, client.ObjectKey{Name: snap.Spec.QuestDBName, Namespace: snap.Namespace}, questdb)
 		if err != nil {
 			return err
 		}
