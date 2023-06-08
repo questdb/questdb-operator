@@ -1,4 +1,4 @@
-# permissions for end users to edit snapshotschedules.
+# permissions for end users to edit questdbsnapshotschedules.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -6,15 +6,15 @@ metadata:
     app.kubernetes.io/name: clusterrole
     app.kubernetes.io/instance: questdbsnapshotschedule-editor-role
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: questdb-operator
-    app.kubernetes.io/part-of: questdb-operator
+    app.kubernetes.io/created-by: questdb-operator-v4
+    app.kubernetes.io/part-of: questdb-operator-v4
     app.kubernetes.io/managed-by: kustomize
   name: questdbsnapshotschedule-editor-role
 rules:
 - apiGroups:
   - crd.questdb.io
   resources:
-  - snapshotschedules
+  - questdbsnapshotschedules
   verbs:
   - create
   - delete
@@ -26,6 +26,6 @@ rules:
 - apiGroups:
   - crd.questdb.io
   resources:
-  - snapshotschedules/status
+  - questdbsnapshotschedules/status
   verbs:
   - get

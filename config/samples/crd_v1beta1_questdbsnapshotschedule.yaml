@@ -1,39 +1,12 @@
----
 apiVersion: crd.questdb.io/v1beta1
 kind: QuestDBSnapshotSchedule
 metadata:
   labels:
     app.kubernetes.io/name: questdbsnapshotschedule
     app.kubernetes.io/instance: questdbsnapshotschedule-sample
-    app.kubernetes.io/part-of: questdb-operator
+    app.kubernetes.io/part-of: questdb-operator-v4
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: questdb-operator
+    app.kubernetes.io/created-by: questdb-operator-v4
   name: questdbsnapshotschedule-sample
 spec:
-  schedule: "5 4 * * *" # every day at 4:05 AM
-  retention: 7 # keep 7 snapshots
-  serviceAccount: questdb-snapshotter
-  snapshotClass: csi-ebs-snapclass
-  snapshot:
-    questdb: questdb-sample
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: questdb-snapshotter
-  namespace: default
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: questdb-snapshotter
-  namespace: default
-rules:
-- apiGroups:
-  - "crd.questdb.io"
-  resources:
-  - questdbsnapshots
-  verbs:
-  - get
-  - list
-  - create
+  # TODO(user): Add fields here

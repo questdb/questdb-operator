@@ -33,7 +33,7 @@ import (
 
 	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
-	"github.com/questdb/questdb-operator/controllers"
+	"github.com/questdb/questdb-operator/internal/controller"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -90,21 +90,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.QuestDBReconciler{
+	if err = (&controller.QuestDBReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "QuestDB")
 		os.Exit(1)
 	}
-	if err = (&controllers.QuestDBSnapshotScheduleReconciler{
+	if err = (&controller.QuestDBSnapshotScheduleReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "QuestDBSnapshotSchedule")
 		os.Exit(1)
 	}
-	if err = (&controllers.QuestDBSnapshotReconciler{
+	if err = (&controller.QuestDBSnapshotReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("questdbsnapshot-controller"),

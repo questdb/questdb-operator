@@ -6,8 +6,8 @@ metadata:
     app.kubernetes.io/name: clusterrole
     app.kubernetes.io/instance: questdbsnapshot-viewer-role
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: questdb-operator
-    app.kubernetes.io/part-of: questdb-operator
+    app.kubernetes.io/created-by: questdb-operator-v4
+    app.kubernetes.io/part-of: questdb-operator-v4
     app.kubernetes.io/managed-by: kustomize
   name: questdbsnapshot-viewer-role
 rules:

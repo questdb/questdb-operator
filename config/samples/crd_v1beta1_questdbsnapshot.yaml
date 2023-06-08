@@ -2,12 +2,11 @@ apiVersion: crd.questdb.io/v1beta1
 kind: QuestDBSnapshot
 metadata:
   labels:
-    app.kubernetes.io/name: snapshot
-    app.kubernetes.io/instance: snapshot-sample
-    app.kubernetes.io/part-of: questdb-operator
+    app.kubernetes.io/name: questdbsnapshot
+    app.kubernetes.io/instance: questdbsnapshot-sample
+    app.kubernetes.io/part-of: questdb-operator-v4
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: questdb-operator
-  name: snapshot-sample
+    app.kubernetes.io/created-by: questdb-operator-v4
+  name: questdbsnapshot-sample
 spec:
-  questdb: questdb-sample
-  volumeSnapshotClass: csi-ebs-snapclass
+  # TODO(user): Add fields here
