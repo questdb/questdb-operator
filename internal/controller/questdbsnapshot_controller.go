@@ -192,7 +192,6 @@ func (r *QuestDBSnapshotReconciler) buildVolumeSnapshot(snap *crdv1beta1.QuestDB
 		volSnap.Spec.VolumeSnapshotClassName = pointer.String(snap.Spec.VolumeSnapshotClass)
 	}
 
-	// todo: figure out why we aren't waiting for the volumesnapshot to delete before cleaning up the snapshot
 	err = ctrl.SetControllerReference(snap, &volSnap, r.Scheme)
 	return volSnap, err
 
@@ -260,8 +259,8 @@ func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *c
 				return ctrl.Result{}, err
 
 			case crdv1beta1.SnapshotRunning:
-				// todo: wait for it to finish?
-				return ctrl.Result{}, nil
+				// Wait for the snapshot to finish
+				return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 			case crdv1beta1.SnapshotFinalizing:
 				// Check the status of the post-snapshot job
 				job := &batchv1.Job{}
@@ -433,6 +432,7 @@ func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, s
 			return ctrl.Result{}, err
 		}
 		r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotSucceeded", "Snapshot %s succeeded", snap.Name)
+		return ctrl.Result{}, nil
 	}
 
 	// If we've reached the maximum number of attempts, fail the snapshot
@@ -470,11 +470,23 @@ func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, s
 }
 
 func (r *QuestDBSnapshotReconciler) handlePhaseFailed(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
-
 	return ctrl.Result{}, nil
 }
 
 func (r *QuestDBSnapshotReconciler) handlePhaseSucceeded(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
-	// todo: figure out what to do if the snapshot succeeded
+	// Delete the pre and post snapshot jobs
+	job := &batchv1.Job{}
+	for _, jobName := range []string{fmt.Sprintf("%s-pre-snapshot", snap.Name), fmt.Sprintf("%s-post-snapshot", snap.Name)} {
+		err := r.Get(ctx, client.ObjectKey{Name: jobName, Namespace: snap.Namespace}, job)
+		if apierrors.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if err = r.Delete(ctx, job); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	return ctrl.Result{}, nil
 }

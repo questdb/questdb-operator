@@ -28,8 +28,9 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 			q    *crdv1beta1.QuestDB
 			snap *crdv1beta1.QuestDBSnapshot
 
-			job     = &batchv1.Job{}
-			volSnap = &volumesnapshotv1.VolumeSnapshot{}
+			volSnap     = &volumesnapshotv1.VolumeSnapshot{}
+			preSnapJob  = &batchv1.Job{}
+			postSnapJob = &batchv1.Job{}
 		)
 
 		BeforeAll(func() {
@@ -43,7 +44,7 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 				return k8sClient.Get(ctx, client.ObjectKey{
 					Name:      fmt.Sprintf("%s-pre-snapshot", snap.Name),
 					Namespace: snap.Namespace,
-				}, job)
+				}, preSnapJob)
 			}, timeout, interval).Should(Succeed())
 
 			By("Checking if the phase is set to SnapshotPending")
@@ -58,10 +59,10 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 			By("Ensuring that the phase does not mutate if the pre-snapshot job is not complete")
 			Consistently(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
-					Name:      job.Name,
-					Namespace: job.Namespace,
-				}, job)).Should(Succeed())
-				g.Expect(job.Status.Succeeded).Should(Equal(int32(0)))
+					Name:      preSnapJob.Name,
+					Namespace: preSnapJob.Namespace,
+				}, preSnapJob)).Should(Succeed())
+				g.Expect(preSnapJob.Status.Succeeded).Should(Equal(int32(0)))
 
 				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
 					Name:      snap.Name,
@@ -80,11 +81,19 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 		})
 
 		It("Should create a VolumeSnapshot once the pre-snapshot job is complete", func() {
+			By("Getting the pre-snapshot job")
+			Eventually(func() error {
+				return k8sClient.Get(ctx, client.ObjectKey{
+					Name:      preSnapJob.Name,
+					Namespace: preSnapJob.Namespace,
+				}, preSnapJob)
+			}, timeout, interval).Should(Succeed())
+
 			By("Manually completing the pre-snapshot job")
 			// Since this is an ordered test, job should not be nil from the previous step
-			Expect(job).ShouldNot(BeNil())
-			job.Status.Succeeded = 1
-			Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+			Expect(preSnapJob).ShouldNot(BeNil())
+			preSnapJob.Status.Succeeded = 1
+			Expect(k8sClient.Status().Update(ctx, preSnapJob)).To(Succeed())
 
 			By("Checking if the phase is set to SnapshotRunning")
 			Eventually(func(g Gomega) {
@@ -131,7 +140,6 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 		})
 
 		It("Should create a post-snapshot job once the VolumeSnapshot is ready", func() {
-
 			By("Setting the ready to use condition to true")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
@@ -160,7 +168,7 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 				return k8sClient.Get(ctx, client.ObjectKey{
 					Name:      fmt.Sprintf("%s-post-snapshot", snap.Name),
 					Namespace: snap.Namespace,
-				}, job)
+				}, postSnapJob)
 			}, timeout, interval).Should(Succeed())
 
 		})
@@ -169,11 +177,11 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 			By("Setting the post-snapshot job to complete")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
-					Name:      job.Name,
-					Namespace: job.Namespace,
-				}, job)).To(Succeed())
-				job.Status.Succeeded = 1
-				g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+					Name:      postSnapJob.Name,
+					Namespace: postSnapJob.Namespace,
+				}, postSnapJob)).To(Succeed())
+				postSnapJob.Status.Succeeded = 1
+				g.Expect(k8sClient.Status().Update(ctx, postSnapJob)).To(Succeed())
 			}, timeout, interval).Should(Succeed())
 
 			By("Checking if the phase is set to SnapshotSucceeded")
@@ -185,6 +193,28 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 
 				g.Expect(snap.Status.Phase).Should(Equal(crdv1beta1.SnapshotSucceeded))
 			}, timeout, interval).Should(Succeed())
+		})
+
+		It("Should clean up the jobs once the snapshot has succeeded", func() {
+			// We just need to check the deletiontimestamp since there's no job controller to clean up the jobs
+			By("Checking that the pre-snapshot job is deleted")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+					Name:      preSnapJob.Name,
+					Namespace: preSnapJob.Namespace,
+				}, preSnapJob)).Should(Succeed())
+				g.Expect(preSnapJob.DeletionTimestamp).NotTo(BeNil())
+			}, timeout, interval).Should(Succeed())
+
+			By("Checking that the post-snapshot job is deleted")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+					Name:      postSnapJob.Name,
+					Namespace: postSnapJob.Namespace,
+				}, postSnapJob)).Should(Succeed())
+				g.Expect(postSnapJob.DeletionTimestamp).NotTo(BeNil())
+			}, timeout, interval).Should(Succeed())
+
 		})
 
 	})

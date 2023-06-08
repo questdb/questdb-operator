@@ -354,7 +354,7 @@ func (r *QuestDBReconciler) buildPvc(q *crdv1beta1.QuestDB) (v1.PersistentVolume
 }
 
 func (r *QuestDBReconciler) buildConfigMap(q *crdv1beta1.QuestDB) (v1.ConfigMap, error) {
-	// todo: Run some validation on the config
+	// todo: Run some validation on the config, probably in the webhook
 	// todo: Probably move credentials to a secret
 	var err error
 	cm := v1.ConfigMap{
