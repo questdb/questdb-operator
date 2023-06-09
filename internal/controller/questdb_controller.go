@@ -21,6 +21,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,7 +37,8 @@ import (
 // QuestDBReconciler reconciles a QuestDB object
 type QuestDBReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbs,verbs=get;list;watch;create;update;patch;delete
@@ -99,10 +101,15 @@ func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Resize the PVC if needed
 	if pvc.Spec.Resources.Requests[v1.ResourceStorage] != q.Spec.Volume.Size {
+		if err = r.Update(ctx, &pvc); err != nil {
+			return ctrl.Result{}, err
+		}
+
 		pvc.Spec.Resources.Requests = v1.ResourceList{
 			v1.ResourceStorage: q.Spec.Volume.Size,
 		}
 		if err = r.Update(ctx, &pvc); err != nil {
+			r.Recorder.Event(q, v1.EventTypeWarning, "PVCResizeFailed", err.Error())
 			return ctrl.Result{}, err
 		}
 	}

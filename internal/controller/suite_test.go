@@ -94,8 +94,9 @@ var _ = BeforeSuite(func() {
 
 	// Setup all Controllers
 	Expect((&QuestDBReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("questdb-controller"),
 	}).SetupWithManager(mgr)).Should(Succeed())
 
 	Expect((&QuestDBSnapshotScheduleReconciler{
