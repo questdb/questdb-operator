@@ -39,6 +39,23 @@ var _ = Describe("QuestDB Webhook", func() {
 			q.Spec.Volume.Size = resource.MustParse("0")
 			Expect(k8sClient.Create(ctx, q)).ToNot(Succeed())
 		})
+
+		It("should reject reserved config keys", func() {
+			q.Spec.Config.DbConfig = "http.bind.to="
+			Expect(k8sClient.Create(ctx, q)).ToNot(Succeed())
+
+			q.Spec.Config.DbConfig = "line.tcp.net.bind.to="
+			Expect(k8sClient.Create(ctx, q)).ToNot(Succeed())
+
+			q.Spec.Config.DbConfig = "pg.net.bind.to="
+			Expect(k8sClient.Create(ctx, q)).ToNot(Succeed())
+
+			q.Spec.Config.DbConfig = "\notherstuff\nhttp.bind.to="
+			Expect(k8sClient.Create(ctx, q)).ToNot(Succeed())
+
+			q.Spec.Config.DbConfig = "\notherstuff\n#line.tcp.net.bind.to="
+			Expect(k8sClient.Create(ctx, q)).To(Succeed())
+		})
 	})
 
 	Context("When validating QuestDB Updates", func() {

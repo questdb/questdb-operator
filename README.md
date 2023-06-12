@@ -87,6 +87,12 @@ make manifests
 
 More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
+### Autoreload
+
+The controller does not automatically update the StatefulSet on config changes, but you can enable this by adding
+a `stakater/Reloader` annotation to the StatefulSet directly, pointing to the child ConfigMap. The controller will persist any annotations made to child objects, so this will work with no issues. See <https://github.com/stakater/Reloader> for more information.
+
+
 ## License
 
 Copyright 2023.

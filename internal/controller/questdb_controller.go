@@ -18,6 +18,8 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -81,7 +83,33 @@ func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	// todo: handle updates to the configmap??? Or just suggest to use https://github.com/stakater/Reloader
+	// Update the ConfigMap if needed
+	var configChanged, portsChanged bool
+
+	// Use strings.HasPrefix to check non-reserved values since we add some reserved values at the end
+	if !strings.HasPrefix(cm.Data["questdb.conf"], q.Spec.Config.DbConfig) {
+		cm.Data["questdb.conf"] = q.Spec.Config.DbConfig
+		configChanged = true
+	}
+	// Use strings.HasSuffix to check the reserved values
+	if !strings.HasSuffix(cm.Data["questdb.conf"], buildDbConfigSuffix(q)) {
+		cm.Data["questdb.conf"] = q.Spec.Config.DbConfig + buildDbConfigSuffix(q)
+		configChanged = true
+		portsChanged = true
+	}
+
+	// Check reserved values
+
+	if cm.Data["log.conf"] != q.Spec.Config.LogConfig {
+		cm.Data["log.conf"] = q.Spec.Config.LogConfig
+		configChanged = true
+	}
+
+	if configChanged {
+		if err = r.Update(ctx, &cm); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	// Reconcile the PVC
 	pvc, err := r.buildPvc(q)
@@ -152,6 +180,17 @@ func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
+	// Update the Service ports if needed
+	if portsChanged {
+		svc, err = r.buildService(q)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if err = r.Update(ctx, &svc); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -195,19 +234,18 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB) (appsv1.Stat
 							Image:           q.Spec.Image,
 							ImagePullPolicy: q.Spec.ImagePullPolicy,
 							Env:             q.Spec.ExtraEnv,
-							// todo: Make ports configurable??
 							Ports: []v1.ContainerPort{
 								{
 									Name:          "http",
-									ContainerPort: 9000,
+									ContainerPort: q.PortHttp(),
 								},
 								{
 									Name:          "psql",
-									ContainerPort: 8812,
+									ContainerPort: q.PortPsql(),
 								},
 								{
 									Name:          "ilp",
-									ContainerPort: 9009,
+									ContainerPort: q.PortIlp(),
 								},
 								{
 									Name:          "metrics",
@@ -306,15 +344,15 @@ func (r *QuestDBReconciler) buildService(q *crdv1beta1.QuestDB) (v1.Service, err
 			Ports: []v1.ServicePort{
 				{
 					Name: "http",
-					Port: 9000,
+					Port: q.PortHttp(),
 				},
 				{
 					Name: "psql",
-					Port: 8812,
+					Port: q.PortPsql(),
 				},
 				{
 					Name: "ilp",
-					Port: 9009,
+					Port: q.PortIlp(),
 				},
 				{
 					Name: "metrics",
@@ -375,10 +413,22 @@ func (r *QuestDBReconciler) buildPvc(q *crdv1beta1.QuestDB) (v1.PersistentVolume
 
 }
 
+func buildDbConfigSuffix(q *crdv1beta1.QuestDB) string {
+	dbConfig := strings.Builder{}
+	dbConfig.WriteRune('\n')
+	dbConfig.WriteString("### Reserved values -- set by the operator\n")
+	dbConfig.WriteString(fmt.Sprintf("http.bind.to=%d\n", q.PortHttp()))
+	dbConfig.WriteString(fmt.Sprintf("line.tcp.net.bind.to=%d\n", q.PortIlp()))
+	dbConfig.WriteString(fmt.Sprintf("pg.net.bind.to=%d\n", q.PortPsql()))
+
+	return dbConfig.String()
+}
+
 func (r *QuestDBReconciler) buildConfigMap(q *crdv1beta1.QuestDB) (v1.ConfigMap, error) {
 	// todo: Run some validation on the config, probably in the webhook
 	// todo: Probably move credentials to a secret
 	var err error
+
 	cm := v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      q.Name,
@@ -386,7 +436,7 @@ func (r *QuestDBReconciler) buildConfigMap(q *crdv1beta1.QuestDB) (v1.ConfigMap,
 			Labels:    q.Labels,
 		},
 		Data: map[string]string{
-			"questdb.conf": q.Spec.Config.DbConfig,
+			"questdb.conf": q.Spec.Config.DbConfig + buildDbConfigSuffix(q),
 			"log.conf":     q.Spec.Config.LogConfig,
 		},
 	}

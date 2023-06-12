@@ -17,7 +17,10 @@ limitations under the License.
 package v1beta1
 
 import (
+	"bufio"
 	"errors"
+	"fmt"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -50,12 +53,37 @@ func (r *QuestDB) Default() {
 
 var _ webhook.Validator = &QuestDB{}
 
+var reservedConfigKeys = []string{
+	"http.bind.to",
+	"line.tcp.net.bind.to",
+	"pg.net.bind.to",
+}
+
+var validateDbConfig = func(config string) error {
+	scanner := bufio.NewScanner(strings.NewReader(config))
+	for scanner.Scan() {
+		line := scanner.Text()
+		for _, reservedKey := range reservedConfigKeys {
+			if strings.HasPrefix(line, reservedKey) {
+				return fmt.Errorf("config key %s is reserved", reservedKey)
+			}
+		}
+	}
+	return nil
+}
+
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *QuestDB) ValidateCreate() error {
 	questdblog.Info("validate create", "name", r.Name)
 
 	if r.Spec.Volume.Size.Value() == 0 {
 		return errors.New("volume size must be greater than 0")
+	}
+
+	if r.Spec.Config.DbConfig != "" {
+		if err := validateDbConfig(r.Spec.Config.DbConfig); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -72,6 +100,12 @@ func (r *QuestDB) ValidateUpdate(old runtime.Object) error {
 
 	if r.Spec.Volume.Size.Value() < oldQdb.Spec.Volume.Size.Value() {
 		return errors.New("cannot shrink volume size")
+	}
+
+	if r.Spec.Config.DbConfig != "" {
+		if err := validateDbConfig(r.Spec.Config.DbConfig); err != nil {
+			return err
+		}
 	}
 
 	return nil

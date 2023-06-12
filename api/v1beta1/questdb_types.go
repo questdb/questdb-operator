@@ -26,6 +26,12 @@ const (
 	QuestDBSnapshotProtectionFinalizer = "questdb.crd.questdb.io/snapshot-protection-finalizer"
 )
 
+type QuestDBPortSpec struct {
+	Ilp  int32 `json:"ilp,omitempty"`
+	Psql int32 `json:"psql,omitempty"`
+	Http int32 `json:"http,omitempty"`
+}
+
 type QuestDBResourcesSpec struct {
 	Limits   v1.ResourceList `json:"limits,omitempty"`
 	Requests v1.ResourceList `json:"requests,omitempty"`
@@ -48,6 +54,7 @@ type QuestDBConfigSpec struct {
 type QuestDBSpec struct {
 	Volume QuestDBVolumeSpec `json:"volume"`
 	Config QuestDBConfigSpec `json:"config,omitempty"` // todo: remove omitempty
+	Ports  QuestDBPortSpec   `json:"ports,omitempty"`
 
 	Image string `json:"image"`
 
@@ -95,4 +102,25 @@ type QuestDBList struct {
 
 func init() {
 	SchemeBuilder.Register(&QuestDB{}, &QuestDBList{})
+}
+
+func (q QuestDB) PortIlp() int32 {
+	if q.Spec.Ports.Ilp == 0 {
+		return 9009
+	}
+	return q.Spec.Ports.Ilp
+}
+
+func (q QuestDB) PortPsql() int32 {
+	if q.Spec.Ports.Psql == 0 {
+		return 8812
+	}
+	return q.Spec.Ports.Psql
+}
+
+func (q QuestDB) PortHttp() int32 {
+	if q.Spec.Ports.Http == 0 {
+		return 9000
+	}
+	return q.Spec.Ports.Http
 }

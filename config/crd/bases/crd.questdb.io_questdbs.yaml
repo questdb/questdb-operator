@@ -1003,6 +1003,18 @@ spec:
                 additionalProperties:
                   type: string
                 type: object
+              ports:
+                properties:
+                  http:
+                    format: int32
+                    type: integer
+                  ilp:
+                    format: int32
+                    type: integer
+                  psql:
+                    format: int32
+                    type: integer
+                type: object
               resources:
                 properties:
                   limits:

@@ -18,7 +18,7 @@ import (
 
 func buildMockQuestDB() *crdv1beta1.QuestDB {
 	var (
-		name = "test-snapshot"
+		name = "test-questdb"
 		ns   = fmt.Sprintf("test-ns-%d", time.Now().UnixNano())
 	)
 
