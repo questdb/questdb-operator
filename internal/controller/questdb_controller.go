@@ -237,7 +237,6 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.Qu
 		sts.Spec.Template.Spec.Containers[0].VolumeMounts = append(sts.Spec.Template.Spec.Containers[0].VolumeMounts, v1.VolumeMount{
 			Name:      "ilp",
 			MountPath: "/var/lib/questdb/auth",
-			SubPath:   "auth.json",
 		})
 
 		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, v1.Volume{
@@ -465,7 +464,7 @@ func buildDbConfigSuffix(q *crdv1beta1.QuestDB, secrets secrets.QuestDBSecrets) 
 	dbConfig.WriteString("### Reserved values -- set by the operator ###\n")
 
 	if secrets.IlpSecret != nil {
-		dbConfig.WriteString(fmt.Sprintf("ilp.auth.file=%s\n", "/var/lib/questdb/auth/auth.json")) // todo: make auth.json location/name configurable?
+		dbConfig.WriteString(fmt.Sprintf("ilp.auth.file=%s\n", "/var/lib/questdb/auth/auth.json"))
 	}
 
 	return dbConfig.String()
