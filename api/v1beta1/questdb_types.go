@@ -105,24 +105,3 @@ type QuestDBList struct {
 func init() {
 	SchemeBuilder.Register(&QuestDB{}, &QuestDBList{})
 }
-
-func (q QuestDB) PortIlp() int32 {
-	if q.Spec.Ports.Ilp == 0 {
-		return 9009
-	}
-	return q.Spec.Ports.Ilp
-}
-
-func (q QuestDB) PortPsql() int32 {
-	if q.Spec.Ports.Psql == 0 {
-		return 8812
-	}
-	return q.Spec.Ports.Psql
-}
-
-func (q QuestDB) PortHttp() int32 {
-	if q.Spec.Ports.Http == 0 {
-		return 9000
-	}
-	return q.Spec.Ports.Http
-}

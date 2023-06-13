@@ -143,15 +143,15 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.Qu
 							Ports: []v1.ContainerPort{
 								{
 									Name:          "http",
-									ContainerPort: q.PortHttp(),
+									ContainerPort: 9000,
 								},
 								{
 									Name:          "psql",
-									ContainerPort: q.PortPsql(),
+									ContainerPort: 8812,
 								},
 								{
 									Name:          "ilp",
-									ContainerPort: q.PortIlp(),
+									ContainerPort: 9009,
 								},
 								{
 									Name:          "metrics",
@@ -282,8 +282,11 @@ func (r *QuestDBReconciler) reconcileStatefulSet(ctx context.Context, q *crdv1be
 		desired := r.buildStatefulSet(q, s)
 
 		if err = r.Create(ctx, &desired); err != nil {
+			r.Recorder.Event(q, v1.EventTypeWarning, "StatefulSetCreateFailed", err.Error())
 			return err
 		}
+
+		r.Recorder.Event(q, v1.EventTypeNormal, "StatefulSetCreated", "StatefulSet created")
 
 		*actual = desired
 	}
@@ -292,8 +295,11 @@ func (r *QuestDBReconciler) reconcileStatefulSet(ctx context.Context, q *crdv1be
 	if actual.Spec.Template.Spec.Containers[0].Image != q.Spec.Image {
 		actual.Spec.Template.Spec.Containers[0].Image = q.Spec.Image
 		if err = r.Update(ctx, actual); err != nil {
+			r.Recorder.Event(q, v1.EventTypeWarning, "StatefulSetUpdateFailed", err.Error())
 			return err
 		}
+
+		r.Recorder.Event(q, v1.EventTypeNormal, "StatefulSetUpdated", "StatefulSet updated")
 	}
 
 	return nil
@@ -311,15 +317,15 @@ func (r *QuestDBReconciler) buildService(q *crdv1beta1.QuestDB) v1.Service {
 			Ports: []v1.ServicePort{
 				{
 					Name: "http",
-					Port: q.PortHttp(),
+					Port: 9000,
 				},
 				{
 					Name: "psql",
-					Port: q.PortPsql(),
+					Port: 8812,
 				},
 				{
 					Name: "ilp",
-					Port: q.PortIlp(),
+					Port: 9009,
 				},
 				{
 					Name: "metrics",
@@ -353,6 +359,8 @@ func (r *QuestDBReconciler) reconcileService(ctx context.Context, q *crdv1beta1.
 			return err
 		}
 
+		r.Recorder.Event(q, v1.EventTypeNormal, "ServiceCreated", "Service created")
+
 		*actual = desired
 	}
 
@@ -362,6 +370,8 @@ func (r *QuestDBReconciler) reconcileService(ctx context.Context, q *crdv1beta1.
 		if err = r.Update(ctx, actual); err != nil {
 			return err
 		}
+
+		r.Recorder.Event(q, v1.EventTypeNormal, "ServiceUpdated", "Service updated")
 	}
 
 	return nil
@@ -426,18 +436,16 @@ func (r *QuestDBReconciler) reconcilePvc(ctx context.Context, q *crdv1beta1.Ques
 		}
 		desired := r.buildPvc(q)
 		if err = r.Create(ctx, &desired); err != nil {
+			r.Recorder.Event(q, v1.EventTypeWarning, "PVCCreateFailed", err.Error())
 			return err
 		}
+		r.Recorder.Event(q, v1.EventTypeNormal, "PVCCreated", "PVC created")
 
 		*actual = desired
 	}
 
 	// Resize the PVC if needed
 	if actual.Spec.Resources.Requests[v1.ResourceStorage] != q.Spec.Volume.Size {
-		if err = r.Update(ctx, actual); err != nil {
-			return err
-		}
-
 		actual.Spec.Resources.Requests = v1.ResourceList{
 			v1.ResourceStorage: q.Spec.Volume.Size,
 		}
@@ -445,6 +453,7 @@ func (r *QuestDBReconciler) reconcilePvc(ctx context.Context, q *crdv1beta1.Ques
 			r.Recorder.Event(q, v1.EventTypeWarning, "PVCResizeFailed", err.Error())
 			return err
 		}
+		r.Recorder.Event(q, v1.EventTypeNormal, "PVCResized", "PVC resized")
 	}
 
 	return nil
@@ -454,9 +463,6 @@ func buildDbConfigSuffix(q *crdv1beta1.QuestDB, secrets secrets.QuestDBSecrets) 
 	dbConfig := strings.Builder{}
 	dbConfig.WriteRune('\n')
 	dbConfig.WriteString("### Reserved values -- set by the operator ###\n")
-	dbConfig.WriteString(fmt.Sprintf("http.bind.to=0.0.0.0:%d\n", q.PortHttp()))
-	dbConfig.WriteString(fmt.Sprintf("line.tcp.net.bind.to=0.0.0.0:%d\n", q.PortIlp()))
-	dbConfig.WriteString(fmt.Sprintf("pg.net.bind.to=0.0.0.0:%d\n", q.PortPsql()))
 
 	if secrets.IlpSecret != nil {
 		dbConfig.WriteString(fmt.Sprintf("ilp.auth.file=%s\n", "/var/lib/questdb/auth/auth.json")) // todo: make auth.json location/name configurable?
@@ -503,8 +509,11 @@ func (r *QuestDBReconciler) reconcileConfigMap(ctx context.Context, q *crdv1beta
 		}
 
 		if err = r.Create(ctx, &desired); err != nil {
+			r.Recorder.Event(q, v1.EventTypeWarning, "ConfigMapCreateFailed", err.Error())
 			return err
 		}
+
+		r.Recorder.Event(q, v1.EventTypeNormal, "ConfigMapCreated", "ConfigMap created")
 
 		*actual = desired
 	}
@@ -512,8 +521,11 @@ func (r *QuestDBReconciler) reconcileConfigMap(ctx context.Context, q *crdv1beta
 	// Update the ConfigMap if anything has changed
 	if !reflect.DeepEqual(actual.Data, desired.Data) {
 		if err = r.Update(ctx, &desired); err != nil {
+			r.Recorder.Event(q, v1.EventTypeWarning, "ConfigMapUpdateFailed", err.Error())
 			return err
 		}
+
+		r.Recorder.Event(q, v1.EventTypeNormal, "ConfigMapUpdated", "ConfigMap updated")
 	}
 
 	return nil
