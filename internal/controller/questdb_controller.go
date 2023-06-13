@@ -71,7 +71,7 @@ func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Get its secrets
-	secrets, err := secrets.GetSecrets(ctx, r.Client, q)
+	secrets, err := secrets.GetSecrets(ctx, r.Client, client.ObjectKeyFromObject(q))
 	if err != nil {
 		return ctrl.Result{}, err
 	}

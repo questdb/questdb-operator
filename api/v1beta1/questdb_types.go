@@ -55,7 +55,7 @@ type QuestDBConfigSpec struct {
 // QuestDBSpec defines the desired state of QuestDB
 type QuestDBSpec struct {
 	Volume QuestDBVolumeSpec `json:"volume"`
-	Config QuestDBConfigSpec `json:"config,omitempty"` // todo: remove omitempty
+	Config QuestDBConfigSpec `json:"config,omitempty"`
 	Ports  QuestDBPortSpec   `json:"ports,omitempty"`
 
 	Image string `json:"image"`
