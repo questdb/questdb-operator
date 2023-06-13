@@ -57,6 +57,9 @@ var reservedConfigKeys = []string{
 	"http.bind.to",
 	"line.tcp.net.bind.to",
 	"pg.net.bind.to",
+	"pg.user",
+	"pg.password",
+	"line.tcp.auth.db.path",
 }
 
 var validateDbConfig = func(config string) error {
@@ -80,8 +83,8 @@ func (r *QuestDB) ValidateCreate() error {
 		return errors.New("volume size must be greater than 0")
 	}
 
-	if r.Spec.Config.DbConfig != "" {
-		if err := validateDbConfig(r.Spec.Config.DbConfig); err != nil {
+	if r.Spec.Config.ServerConfig != "" {
+		if err := validateDbConfig(r.Spec.Config.ServerConfig); err != nil {
 			return err
 		}
 	}
@@ -102,8 +105,8 @@ func (r *QuestDB) ValidateUpdate(old runtime.Object) error {
 		return errors.New("cannot shrink volume size")
 	}
 
-	if r.Spec.Config.DbConfig != "" {
-		if err := validateDbConfig(r.Spec.Config.DbConfig); err != nil {
+	if r.Spec.Config.ServerConfig != "" {
+		if err := validateDbConfig(r.Spec.Config.ServerConfig); err != nil {
 			return err
 		}
 	}

@@ -41,19 +41,20 @@ var _ = Describe("QuestDB Webhook", func() {
 		})
 
 		It("should reject reserved config keys", func() {
-			q.Spec.Config.DbConfig = "http.bind.to="
+			q.Spec.Config.ServerConfig = "http.bind.to="
 			Expect(k8sClient.Create(ctx, q)).ToNot(Succeed())
 
-			q.Spec.Config.DbConfig = "line.tcp.net.bind.to="
+			q.Spec.Config.ServerConfig = "line.tcp.net.bind.to="
 			Expect(k8sClient.Create(ctx, q)).ToNot(Succeed())
 
-			q.Spec.Config.DbConfig = "pg.net.bind.to="
+			q.Spec.Config.ServerConfig = "pg.net.bind.to="
 			Expect(k8sClient.Create(ctx, q)).ToNot(Succeed())
 
-			q.Spec.Config.DbConfig = "\notherstuff\nhttp.bind.to="
+			q.Spec.Config.ServerConfig = "\notherstuff\nhttp.bind.to="
 			Expect(k8sClient.Create(ctx, q)).ToNot(Succeed())
 
-			q.Spec.Config.DbConfig = "\notherstuff\n#line.tcp.net.bind.to="
+			// Respect commented-out lines
+			q.Spec.Config.ServerConfig = "\notherstuff\n#line.tcp.net.bind.to="
 			Expect(k8sClient.Create(ctx, q)).To(Succeed())
 		})
 	})

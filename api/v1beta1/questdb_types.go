@@ -24,6 +24,8 @@ import (
 
 const (
 	QuestDBSnapshotProtectionFinalizer = "questdb.crd.questdb.io/snapshot-protection-finalizer"
+	AnnotationQuestDBName              = "questdb.crd.questdb.io/name"
+	AnnotationQuestDBSecretType        = "questdb.crd.questdb.io/secret-type"
 )
 
 type QuestDBPortSpec struct {
@@ -46,14 +48,14 @@ type QuestDBVolumeSpec struct {
 }
 
 type QuestDBConfigSpec struct {
-	DbConfig  string `json:"dbConfig,omitempty"`
-	LogConfig string `json:"logConfig,omitempty"`
+	ServerConfig string `json:"serverConfig,omitempty"`
+	LogConfig    string `json:"logConfig,omitempty"`
 }
 
 // QuestDBSpec defines the desired state of QuestDB
 type QuestDBSpec struct {
 	Volume QuestDBVolumeSpec `json:"volume"`
-	Config QuestDBConfigSpec `json:"config,omitempty"` // todo: remove omitempty
+	Config QuestDBConfigSpec `json:"config,omitempty"`
 	Ports  QuestDBPortSpec   `json:"ports,omitempty"`
 
 	Image string `json:"image"`
@@ -102,25 +104,4 @@ type QuestDBList struct {
 
 func init() {
 	SchemeBuilder.Register(&QuestDB{}, &QuestDBList{})
-}
-
-func (q QuestDB) PortIlp() int32 {
-	if q.Spec.Ports.Ilp == 0 {
-		return 9009
-	}
-	return q.Spec.Ports.Ilp
-}
-
-func (q QuestDB) PortPsql() int32 {
-	if q.Spec.Ports.Psql == 0 {
-		return 8812
-	}
-	return q.Spec.Ports.Psql
-}
-
-func (q QuestDB) PortHttp() int32 {
-	if q.Spec.Ports.Http == 0 {
-		return 9000
-	}
-	return q.Spec.Ports.Http
 }

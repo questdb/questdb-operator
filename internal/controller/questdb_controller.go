@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
+	"github.com/questdb/questdb-operator/internal/secrets"
 
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -68,127 +70,30 @@ func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Reconcile the ConfigMap
-	cm, err := r.buildConfigMap(q)
+	// Get its secrets
+	secrets, err := secrets.GetSecrets(ctx, r.Client, client.ObjectKeyFromObject(q))
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if err = r.Get(ctx, req.NamespacedName, &cm); err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return ctrl.Result{}, err
-		}
 
-		if err = r.Create(ctx, &cm); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	// Update the ConfigMap if needed
-	var configChanged, portsChanged bool
-
-	// Use strings.HasPrefix to check non-reserved values since we add some reserved values at the end
-	if !strings.HasPrefix(cm.Data["questdb.conf"], q.Spec.Config.DbConfig) {
-		cm.Data["questdb.conf"] = q.Spec.Config.DbConfig
-		configChanged = true
-	}
-	// Use strings.HasSuffix to check the reserved values
-	if !strings.HasSuffix(cm.Data["questdb.conf"], buildDbConfigSuffix(q)) {
-		cm.Data["questdb.conf"] = q.Spec.Config.DbConfig + buildDbConfigSuffix(q)
-		configChanged = true
-		portsChanged = true
-	}
-
-	// Check reserved values
-
-	if cm.Data["log.conf"] != q.Spec.Config.LogConfig {
-		cm.Data["log.conf"] = q.Spec.Config.LogConfig
-		configChanged = true
-	}
-
-	if configChanged {
-		if err = r.Update(ctx, &cm); err != nil {
-			return ctrl.Result{}, err
-		}
+	// Reconcile the ConfigMap
+	if err = r.reconcileConfigMap(ctx, q, secrets); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Reconcile the PVC
-	pvc, err := r.buildPvc(q)
-	if err != nil {
+	if err = r.reconcilePvc(ctx, q); err != nil {
 		return ctrl.Result{}, err
-	}
-
-	if err = r.Get(ctx, req.NamespacedName, &pvc); err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return ctrl.Result{}, err
-		}
-
-		if err = r.Create(ctx, &pvc); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	// Resize the PVC if needed
-	if pvc.Spec.Resources.Requests[v1.ResourceStorage] != q.Spec.Volume.Size {
-		if err = r.Update(ctx, &pvc); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		pvc.Spec.Resources.Requests = v1.ResourceList{
-			v1.ResourceStorage: q.Spec.Volume.Size,
-		}
-		if err = r.Update(ctx, &pvc); err != nil {
-			r.Recorder.Event(q, v1.EventTypeWarning, "PVCResizeFailed", err.Error())
-			return ctrl.Result{}, err
-		}
 	}
 
 	// Reconcile the StatefulSet
-	sts, err := r.buildStatefulSet(q)
-	if err != nil {
+	if err = r.reconcileStatefulSet(ctx, q, secrets); err != nil {
 		return ctrl.Result{}, err
-	}
-	if err = r.Get(ctx, req.NamespacedName, &sts); err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return ctrl.Result{}, err
-		}
-
-		if err = r.Create(ctx, &sts); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	// Update the StatefulSet image if needed
-	if sts.Spec.Template.Spec.Containers[0].Image != q.Spec.Image {
-		sts.Spec.Template.Spec.Containers[0].Image = q.Spec.Image
-		if err = r.Update(ctx, &sts); err != nil {
-			return ctrl.Result{}, err
-		}
 	}
 
 	// Reconcile the Service
-	svc, err := r.buildService(q)
-	if err != nil {
+	if err = r.reconcileService(ctx, q); err != nil {
 		return ctrl.Result{}, err
-	}
-	if err = r.Get(ctx, req.NamespacedName, &svc); err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return ctrl.Result{}, err
-		}
-
-		if err = r.Create(ctx, &svc); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	// Update the Service ports if needed
-	if portsChanged {
-		svc, err = r.buildService(q)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		if err = r.Update(ctx, &svc); err != nil {
-			return ctrl.Result{}, err
-		}
 	}
 
 	return ctrl.Result{}, nil
@@ -205,8 +110,7 @@ func (r *QuestDBReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB) (appsv1.StatefulSet, error) {
-	var err error
+func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.QuestDBSecrets) appsv1.StatefulSet {
 
 	sts := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -230,22 +134,24 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB) (appsv1.Stat
 					Affinity: q.Spec.Affinity,
 					Containers: []v1.Container{
 						{
-							Name:            "questdb",
-							Image:           q.Spec.Image,
+							Name:  "questdb",
+							Image: q.Spec.Image,
+							//Image:           "busybox:latest",
+							//Command:         []string{"sleep", "infinity"},
 							ImagePullPolicy: q.Spec.ImagePullPolicy,
 							Env:             q.Spec.ExtraEnv,
 							Ports: []v1.ContainerPort{
 								{
 									Name:          "http",
-									ContainerPort: q.PortHttp(),
+									ContainerPort: 9000,
 								},
 								{
 									Name:          "psql",
-									ContainerPort: q.PortPsql(),
+									ContainerPort: 8812,
 								},
 								{
 									Name:          "ilp",
-									ContainerPort: q.PortIlp(),
+									ContainerPort: 9009,
 								},
 								{
 									Name:          "metrics",
@@ -286,11 +192,11 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB) (appsv1.Stat
 							VolumeMounts: []v1.VolumeMount{
 								{
 									Name:      "data",
-									MountPath: "/var/lib/questdb",
+									MountPath: "/var/lib/questdb/db",
 								},
 								{
 									Name:      "config",
-									MountPath: "/opt/questdb/conf",
+									MountPath: "/var/lib/questdb/conf",
 								},
 							},
 						},
@@ -326,14 +232,80 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB) (appsv1.Stat
 		},
 	}
 
-	err = ctrl.SetControllerReference(q, &sts, r.Scheme)
-	return sts, err
+	// Add ILP mount if needed
+	if s.IlpSecret != nil {
+		sts.Spec.Template.Spec.Containers[0].VolumeMounts = append(sts.Spec.Template.Spec.Containers[0].VolumeMounts, v1.VolumeMount{
+			Name:      "ilp",
+			MountPath: "/var/lib/questdb/auth",
+		})
+
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, v1.Volume{
+			Name: "ilp",
+			VolumeSource: v1.VolumeSource{
+				Secret: &v1.SecretVolumeSource{
+					SecretName: s.IlpSecret.Name,
+				},
+			},
+		})
+	}
+
+	// Add PSQL env var mount if needed
+	if s.PsqlSecret != nil {
+		sts.Spec.Template.Spec.Containers[0].EnvFrom = append(sts.Spec.Template.Spec.Containers[0].EnvFrom, v1.EnvFromSource{
+			SecretRef: &v1.SecretEnvSource{
+				LocalObjectReference: v1.LocalObjectReference{
+					Name: s.PsqlSecret.Name,
+				},
+			},
+		})
+	}
+
+	if err := ctrl.SetControllerReference(q, &sts, r.Scheme); err != nil {
+		panic(fmt.Sprintf("failed to set controller reference, even though we are building an object from scratch: %s", err.Error()))
+	}
+	return sts
 
 }
 
-func (r *QuestDBReconciler) buildService(q *crdv1beta1.QuestDB) (v1.Service, error) {
-	var err error
+func (r *QuestDBReconciler) reconcileStatefulSet(ctx context.Context, q *crdv1beta1.QuestDB, s secrets.QuestDBSecrets) error {
+	var (
+		err    error
+		actual = &appsv1.StatefulSet{}
+	)
 
+	if err = r.Get(ctx, client.ObjectKeyFromObject(q), actual); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return err
+		}
+
+		desired := r.buildStatefulSet(q, s)
+
+		if err = r.Create(ctx, &desired); err != nil {
+			r.Recorder.Event(q, v1.EventTypeWarning, "StatefulSetCreateFailed", err.Error())
+			return err
+		}
+
+		r.Recorder.Event(q, v1.EventTypeNormal, "StatefulSetCreated", "StatefulSet created")
+
+		*actual = desired
+	}
+
+	// Update the StatefulSet image if needed
+	if actual.Spec.Template.Spec.Containers[0].Image != q.Spec.Image {
+		actual.Spec.Template.Spec.Containers[0].Image = q.Spec.Image
+		if err = r.Update(ctx, actual); err != nil {
+			r.Recorder.Event(q, v1.EventTypeWarning, "StatefulSetUpdateFailed", err.Error())
+			return err
+		}
+
+		r.Recorder.Event(q, v1.EventTypeNormal, "StatefulSetUpdated", "StatefulSet updated")
+	}
+
+	return nil
+
+}
+
+func (r *QuestDBReconciler) buildService(q *crdv1beta1.QuestDB) v1.Service {
 	svc := v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      q.Name,
@@ -344,15 +316,15 @@ func (r *QuestDBReconciler) buildService(q *crdv1beta1.QuestDB) (v1.Service, err
 			Ports: []v1.ServicePort{
 				{
 					Name: "http",
-					Port: q.PortHttp(),
+					Port: 9000,
 				},
 				{
 					Name: "psql",
-					Port: q.PortPsql(),
+					Port: 8812,
 				},
 				{
 					Name: "ilp",
-					Port: q.PortIlp(),
+					Port: 9009,
 				},
 				{
 					Name: "metrics",
@@ -363,12 +335,48 @@ func (r *QuestDBReconciler) buildService(q *crdv1beta1.QuestDB) (v1.Service, err
 		},
 	}
 
-	err = ctrl.SetControllerReference(q, &svc, r.Scheme)
-	return svc, err
+	if err := ctrl.SetControllerReference(q, &svc, r.Scheme); err != nil {
+		panic(fmt.Sprintf("failed to set controller reference, even though we are building an object from scratch: %s", err.Error()))
+	}
+
+	return svc
 }
 
-func (r *QuestDBReconciler) buildPvc(q *crdv1beta1.QuestDB) (v1.PersistentVolumeClaim, error) {
-	var err error
+func (r *QuestDBReconciler) reconcileService(ctx context.Context, q *crdv1beta1.QuestDB) error {
+	var (
+		err error
+
+		actual  = &v1.Service{}
+		desired = r.buildService(q)
+	)
+	if err = r.Get(ctx, client.ObjectKeyFromObject(q), actual); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return err
+		}
+
+		if err = r.Create(ctx, &desired); err != nil {
+			return err
+		}
+
+		r.Recorder.Event(q, v1.EventTypeNormal, "ServiceCreated", "Service created")
+
+		*actual = desired
+	}
+
+	// Update the Service ports if needed
+	if !reflect.DeepEqual(actual.Spec.Ports, q.Spec.Ports) {
+		actual.Spec.Ports = desired.Spec.Ports
+		if err = r.Update(ctx, actual); err != nil {
+			return err
+		}
+
+		r.Recorder.Event(q, v1.EventTypeNormal, "ServiceUpdated", "Service updated")
+	}
+
+	return nil
+}
+
+func (r *QuestDBReconciler) buildPvc(q *crdv1beta1.QuestDB) v1.PersistentVolumeClaim {
 
 	pvc := v1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -407,27 +415,66 @@ func (r *QuestDBReconciler) buildPvc(q *crdv1beta1.QuestDB) (v1.PersistentVolume
 		}
 	}
 
-	err = ctrl.SetControllerReference(q, &pvc, r.Scheme)
+	if err := ctrl.SetControllerReference(q, &pvc, r.Scheme); err != nil {
+		panic(fmt.Sprintf("failed to set controller reference, even though we are building an object from scratch: %s", err.Error()))
+	}
 
-	return pvc, err
+	return pvc
 
 }
 
-func buildDbConfigSuffix(q *crdv1beta1.QuestDB) string {
+func (r *QuestDBReconciler) reconcilePvc(ctx context.Context, q *crdv1beta1.QuestDB) error {
+	var (
+		err    error
+		actual = &v1.PersistentVolumeClaim{}
+	)
+
+	if err = r.Get(ctx, client.ObjectKeyFromObject(q), actual); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return err
+		}
+		desired := r.buildPvc(q)
+		if err = r.Create(ctx, &desired); err != nil {
+			r.Recorder.Event(q, v1.EventTypeWarning, "PVCCreateFailed", err.Error())
+			return err
+		}
+		r.Recorder.Event(q, v1.EventTypeNormal, "PVCCreated", "PVC created")
+
+		*actual = desired
+	}
+
+	// Resize the PVC if needed
+	if actual.Spec.Resources.Requests[v1.ResourceStorage] != q.Spec.Volume.Size {
+		actual.Spec.Resources.Requests = v1.ResourceList{
+			v1.ResourceStorage: q.Spec.Volume.Size,
+		}
+		if err = r.Update(ctx, actual); err != nil {
+			r.Recorder.Event(q, v1.EventTypeWarning, "PVCResizeFailed", err.Error())
+			return err
+		}
+		r.Recorder.Event(q, v1.EventTypeNormal, "PVCResized", "PVC resized")
+	}
+
+	return nil
+}
+
+func buildDbConfigSuffix(q *crdv1beta1.QuestDB, secrets secrets.QuestDBSecrets) string {
 	dbConfig := strings.Builder{}
 	dbConfig.WriteRune('\n')
-	dbConfig.WriteString("### Reserved values -- set by the operator\n")
-	dbConfig.WriteString(fmt.Sprintf("http.bind.to=%d\n", q.PortHttp()))
-	dbConfig.WriteString(fmt.Sprintf("line.tcp.net.bind.to=%d\n", q.PortIlp()))
-	dbConfig.WriteString(fmt.Sprintf("pg.net.bind.to=%d\n", q.PortPsql()))
+	dbConfig.WriteString("### Reserved values -- set by the operator ###\n")
+
+	if secrets.IlpSecret != nil {
+		dbConfig.WriteString(fmt.Sprintf("ilp.auth.file=%s\n", "/var/lib/questdb/auth/auth.json"))
+	}
 
 	return dbConfig.String()
 }
 
-func (r *QuestDBReconciler) buildConfigMap(q *crdv1beta1.QuestDB) (v1.ConfigMap, error) {
-	// todo: Run some validation on the config, probably in the webhook
-	// todo: Probably move credentials to a secret
-	var err error
+func (r *QuestDBReconciler) buildConfigMap(q *crdv1beta1.QuestDB, s secrets.QuestDBSecrets) v1.ConfigMap {
+	logConfig := q.Spec.Config.LogConfig
+	if logConfig == "" {
+		logConfig = defaultLogConf
+	}
 
 	cm := v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -436,11 +483,49 @@ func (r *QuestDBReconciler) buildConfigMap(q *crdv1beta1.QuestDB) (v1.ConfigMap,
 			Labels:    q.Labels,
 		},
 		Data: map[string]string{
-			"questdb.conf": q.Spec.Config.DbConfig + buildDbConfigSuffix(q),
-			"log.conf":     q.Spec.Config.LogConfig,
+			"server.conf": q.Spec.Config.ServerConfig + buildDbConfigSuffix(q, s),
+			"log.conf":    logConfig,
+			"mime.types":  mimetypes,
 		},
 	}
 
-	err = ctrl.SetControllerReference(q, &cm, r.Scheme)
-	return cm, err
+	if err := ctrl.SetControllerReference(q, &cm, r.Scheme); err != nil {
+		panic(fmt.Sprintf("failed to set controller reference, even though we are building an object from scratch: %s", err.Error()))
+	}
+	return cm
+}
+
+func (r *QuestDBReconciler) reconcileConfigMap(ctx context.Context, q *crdv1beta1.QuestDB, s secrets.QuestDBSecrets) error {
+	var (
+		err     error
+		actual  = &v1.ConfigMap{}
+		desired = r.buildConfigMap(q, s)
+	)
+
+	if err = r.Get(ctx, client.ObjectKeyFromObject(q), actual); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return err
+		}
+
+		if err = r.Create(ctx, &desired); err != nil {
+			r.Recorder.Event(q, v1.EventTypeWarning, "ConfigMapCreateFailed", err.Error())
+			return err
+		}
+
+		r.Recorder.Event(q, v1.EventTypeNormal, "ConfigMapCreated", "ConfigMap created")
+
+		*actual = desired
+	}
+
+	// Update the ConfigMap if anything has changed
+	if !reflect.DeepEqual(actual.Data, desired.Data) {
+		if err = r.Update(ctx, &desired); err != nil {
+			r.Recorder.Event(q, v1.EventTypeWarning, "ConfigMapUpdateFailed", err.Error())
+			return err
+		}
+
+		r.Recorder.Event(q, v1.EventTypeNormal, "ConfigMapUpdated", "ConfigMap updated")
+	}
+
+	return nil
 }

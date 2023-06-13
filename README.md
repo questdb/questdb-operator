@@ -92,6 +92,27 @@ More information can be found via the [Kubebuilder Documentation](https://book.k
 The controller does not automatically update the StatefulSet on config changes, but you can enable this by adding
 a `stakater/Reloader` annotation to the StatefulSet directly, pointing to the child ConfigMap. The controller will persist any annotations made to child objects, so this will work with no issues. See <https://github.com/stakater/Reloader> for more information.
 
+### Credentials
+
+To use a secret as a source for ilp or psql credentials, you need to add the following annotations to an existing secret:
+
+```yaml
+# ILP Secret
+annotations:
+  questdb.crd.questdb.io/name: questdb-sample
+  questdb.crd.questdb.io/secret-type: ilp
+
+# PSQL Secret
+annotations:
+  questdb.crd.questdb.io/name: questdb-sample
+  questdb.crd.questdb.io/secret-type: psql
+```
+
+The ILP Secret must contain an `auth.json` key that contains your JWK used for ILP authentication. This will be mounted to the database container as a file and referenced by the database.
+
+The PSQL Secret must contain the `QDB_PG_USER` and `QDB_PG_PASSWORD` keys. These will be mounted to the container as environment variables. Be sure not to overwrite these in `questdb.spec.extraEnv`, as this can cause unexpected behavior, and add-ons like snapshots will likely break.
+
+See the [yaml examples](config/samples/secrets.yaml) for more information
 
 ## License
 

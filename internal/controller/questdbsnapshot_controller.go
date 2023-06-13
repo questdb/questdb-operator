@@ -33,6 +33,7 @@ import (
 
 	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
+	"github.com/questdb/questdb-operator/internal/secrets"
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -68,8 +69,16 @@ func (r *QuestDBSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Get the secrets for the questdb
+
+	// Get status of the secrets
+	s, err := secrets.GetSecrets(ctx, r.Client, client.ObjectKeyFromObject(snap))
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Handle finalizer.  This will ensure that the "SNAPSHOT COMPLETE;" is run before the snapshot is deleted
-	if finalizerResult, err := r.handleFinalizer(ctx, snap); err != nil {
+	if finalizerResult, err := r.handleFinalizer(ctx, snap, s); err != nil {
 		return finalizerResult, err
 	}
 
@@ -78,15 +87,24 @@ func (r *QuestDBSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, nil
 	}
 
+	// Set default value for job backoff limit in case it is not set
+	if snap.Spec.JobBackoffLimit == 0 {
+		snap.Spec.JobBackoffLimit = crdv1beta1.JobBackoffLimitDefault
+		err = r.Update(ctx, snap)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	switch snap.Status.Phase {
 	case "":
 		return r.handlePhaseEmpty(ctx, snap)
 	case crdv1beta1.SnapshotPending:
-		return r.handlePhasePending(ctx, snap)
+		return r.handlePhasePending(ctx, snap, s)
 	case crdv1beta1.SnapshotRunning:
 		return r.handlePhaseRunning(ctx, snap)
 	case crdv1beta1.SnapshotFinalizing:
-		return r.handlePhaseFinalizing(ctx, snap)
+		return r.handlePhaseFinalizing(ctx, snap, s)
 	case crdv1beta1.SnapshotFailed:
 		return r.handlePhaseFailed(ctx, snap)
 	case crdv1beta1.SnapshotSucceeded:
@@ -105,16 +123,31 @@ func (r *QuestDBSnapshotReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *QuestDBSnapshotReconciler) buildPreSnapshotJob(snap *crdv1beta1.QuestDBSnapshot) (batchv1.Job, error) {
-	return r.buildGenericSnapshotJob(snap, "pre-snapshot", "SNAPSHOT PREPARE;")
+func (r *QuestDBSnapshotReconciler) buildPreSnapshotJob(snap *crdv1beta1.QuestDBSnapshot, s secrets.QuestDBSecrets) (batchv1.Job, error) {
+	return r.buildGenericSnapshotJob(snap, s, "pre-snapshot", "SNAPSHOT PREPARE;")
 }
 
-func (r *QuestDBSnapshotReconciler) buildPostSnapshotJob(snap *crdv1beta1.QuestDBSnapshot) (batchv1.Job, error) {
-	return r.buildGenericSnapshotJob(snap, "post-snapshot", "SNAPSHOT COMPLETE;")
+func (r *QuestDBSnapshotReconciler) buildPostSnapshotJob(snap *crdv1beta1.QuestDBSnapshot, s secrets.QuestDBSecrets) (batchv1.Job, error) {
+	return r.buildGenericSnapshotJob(snap, s, "post-snapshot", "SNAPSHOT COMPLETE;")
 }
 
-func (r *QuestDBSnapshotReconciler) buildGenericSnapshotJob(snap *crdv1beta1.QuestDBSnapshot, nameSuffix, command string) (batchv1.Job, error) {
-	var err error
+func (r *QuestDBSnapshotReconciler) buildGenericSnapshotJob(snap *crdv1beta1.QuestDBSnapshot, s secrets.QuestDBSecrets, nameSuffix, command string) (batchv1.Job, error) {
+	// todo: Query the namespace for the pg user and password secrets, should be used in the job.  Make this function available to the questdb controller too
+	var (
+		err      error
+		user     = "admin"
+		password = "quest"
+	)
+
+	if s.PsqlSecret != nil {
+		if val, found := s.PsqlSecret.Data["QDB_PSQL_USER"]; found {
+			user = string(val)
+		}
+		if val, found := s.PsqlSecret.Data["QDB_PSQL_PASSWORD"]; found {
+			password = string(val)
+		}
+	}
+
 	job := batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-%s", snap.Name, nameSuffix),
@@ -147,11 +180,11 @@ func (r *QuestDBSnapshotReconciler) buildGenericSnapshotJob(snap *crdv1beta1.Que
 								},
 								{
 									Name:  "PGUSER",
-									Value: "admin", // todo: use secret (or mount?)
+									Value: user,
 								},
 								{
 									Name:  "PGPASSWORD",
-									Value: "quest", // todo: use secret (or mount?)
+									Value: password,
 								},
 								{
 									Name:  "PGDATABASE",
@@ -159,7 +192,7 @@ func (r *QuestDBSnapshotReconciler) buildGenericSnapshotJob(snap *crdv1beta1.Que
 								},
 								{
 									Name:  "PGPORT",
-									Value: "8812", // todo: make this variable (based on service port)
+									Value: "8812",
 								},
 							},
 						},
@@ -200,7 +233,7 @@ func (r *QuestDBSnapshotReconciler) buildVolumeSnapshot(snap *crdv1beta1.QuestDB
 }
 
 // handleFinalizer is guaranteed to run before any other reconciliation logic
-func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
+func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot, s secrets.QuestDBSecrets) (ctrl.Result, error) {
 	var err error
 
 	if snap.DeletionTimestamp.IsZero() {
@@ -234,7 +267,7 @@ func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *c
 						return ctrl.Result{}, err
 					}
 					r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotFinalizing", "Running 'SNAPSHOT COMPLETE;' for snapshot %s", snap.Name)
-					return r.handlePhaseFinalizing(ctx, snap)
+					return r.handlePhaseFinalizing(ctx, snap, s)
 				}
 
 				// If the job is active, we need to wait until it is not
@@ -321,7 +354,7 @@ func (r *QuestDBSnapshotReconciler) handlePhaseEmpty(ctx context.Context, snap *
 	return ctrl.Result{}, nil
 }
 
-func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
+func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot, s secrets.QuestDBSecrets) (ctrl.Result, error) {
 
 	// Add the snapshot protection finalizer to the questdb
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -337,13 +370,12 @@ func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap
 		}
 		return err
 	})
-
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
 	// Create the pre-snapshot job
-	job, err := r.buildPreSnapshotJob(snap)
+	job, err := r.buildPreSnapshotJob(snap, s)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -406,10 +438,10 @@ func (r *QuestDBSnapshotReconciler) handlePhaseRunning(ctx context.Context, snap
 
 }
 
-func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
+func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot, s secrets.QuestDBSecrets) (ctrl.Result, error) {
 
 	// Create the pre-snapshot job
-	job, err := r.buildPostSnapshotJob(snap)
+	job, err := r.buildPostSnapshotJob(snap, s)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
