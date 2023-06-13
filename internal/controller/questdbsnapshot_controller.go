@@ -114,6 +114,7 @@ func (r *QuestDBSnapshotReconciler) buildPostSnapshotJob(snap *crdv1beta1.QuestD
 }
 
 func (r *QuestDBSnapshotReconciler) buildGenericSnapshotJob(snap *crdv1beta1.QuestDBSnapshot, nameSuffix, command string) (batchv1.Job, error) {
+	// todo: Query the namespace for the pg user and password secrets, should be used in the job.  Make this function available to the questdb controller too
 	var err error
 	job := batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{

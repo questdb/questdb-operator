@@ -92,6 +92,13 @@ More information can be found via the [Kubebuilder Documentation](https://book.k
 The controller does not automatically update the StatefulSet on config changes, but you can enable this by adding
 a `stakater/Reloader` annotation to the StatefulSet directly, pointing to the child ConfigMap. The controller will persist any annotations made to child objects, so this will work with no issues. See <https://github.com/stakater/Reloader> for more information.
 
+### Credentials
+
+#### ILP
+
+Authentication over ILP requires a JWK stored in a directory available to the database. In this operator, we
+
+#### PGWire (PostgreSQL)
 
 ## License
 

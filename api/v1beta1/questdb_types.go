@@ -24,6 +24,8 @@ import (
 
 const (
 	QuestDBSnapshotProtectionFinalizer = "questdb.crd.questdb.io/snapshot-protection-finalizer"
+	AnnotationQuestDBName              = "questdb.crd.questdb.io/name"
+	AnnotationQuestDBSecretType        = "questdb.crd.questdb.io/secret-type"
 )
 
 type QuestDBPortSpec struct {
@@ -46,8 +48,8 @@ type QuestDBVolumeSpec struct {
 }
 
 type QuestDBConfigSpec struct {
-	DbConfig  string `json:"dbConfig,omitempty"`
-	LogConfig string `json:"logConfig,omitempty"`
+	ServerConfig string `json:"serverConfig,omitempty"`
+	LogConfig    string `json:"logConfig,omitempty"`
 }
 
 // QuestDBSpec defines the desired state of QuestDB

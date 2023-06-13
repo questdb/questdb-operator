@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
+	"github.com/questdb/questdb-operator/internal/secrets"
 
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -68,8 +69,14 @@ func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Get its secrets
+	secrets, err := secrets.GetSecrets(ctx, r.Client, q)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile the ConfigMap
-	cm, err := r.buildConfigMap(q)
+	cm, err := r.buildConfigMap(q, secrets)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -86,22 +93,27 @@ func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Update the ConfigMap if needed
 	var configChanged, portsChanged bool
 
+	// todo: this reconciliation method isn't great.. fix this
 	// Use strings.HasPrefix to check non-reserved values since we add some reserved values at the end
-	if !strings.HasPrefix(cm.Data["questdb.conf"], q.Spec.Config.DbConfig) {
-		cm.Data["questdb.conf"] = q.Spec.Config.DbConfig
+	if !strings.HasPrefix(cm.Data["server.conf"], q.Spec.Config.ServerConfig) {
+		cm.Data["server.conf"] = q.Spec.Config.ServerConfig
 		configChanged = true
 	}
 	// Use strings.HasSuffix to check the reserved values
-	if !strings.HasSuffix(cm.Data["questdb.conf"], buildDbConfigSuffix(q)) {
-		cm.Data["questdb.conf"] = q.Spec.Config.DbConfig + buildDbConfigSuffix(q)
+	if !strings.HasSuffix(cm.Data["server.conf"], buildDbConfigSuffix(q, secrets)) {
+		cm.Data["server.conf"] = q.Spec.Config.ServerConfig + buildDbConfigSuffix(q, secrets)
 		configChanged = true
 		portsChanged = true
 	}
 
 	// Check reserved values
-
+	// todo: refactor this too
 	if cm.Data["log.conf"] != q.Spec.Config.LogConfig {
-		cm.Data["log.conf"] = q.Spec.Config.LogConfig
+		if q.Spec.Config.LogConfig == "" {
+			q.Spec.Config.LogConfig = defaultLogConf
+		} else {
+			cm.Data["log.conf"] = q.Spec.Config.LogConfig
+		}
 		configChanged = true
 	}
 
@@ -143,7 +155,7 @@ func (r *QuestDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Reconcile the StatefulSet
-	sts, err := r.buildStatefulSet(q)
+	sts, err := r.buildStatefulSet(q, secrets)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -205,7 +217,7 @@ func (r *QuestDBReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB) (appsv1.StatefulSet, error) {
+func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.QuestDBSecrets) (appsv1.StatefulSet, error) {
 	var err error
 
 	sts := appsv1.StatefulSet{
@@ -230,8 +242,10 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB) (appsv1.Stat
 					Affinity: q.Spec.Affinity,
 					Containers: []v1.Container{
 						{
-							Name:            "questdb",
-							Image:           q.Spec.Image,
+							Name:  "questdb",
+							Image: q.Spec.Image,
+							//Image:           "busybox:latest",
+							//Command:         []string{"sleep", "infinity"},
 							ImagePullPolicy: q.Spec.ImagePullPolicy,
 							Env:             q.Spec.ExtraEnv,
 							Ports: []v1.ContainerPort{
@@ -286,11 +300,11 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB) (appsv1.Stat
 							VolumeMounts: []v1.VolumeMount{
 								{
 									Name:      "data",
-									MountPath: "/var/lib/questdb",
+									MountPath: "/var/lib/questdb/db",
 								},
 								{
 									Name:      "config",
-									MountPath: "/opt/questdb/conf",
+									MountPath: "/var/lib/questdb/conf",
 								},
 							},
 						},
@@ -324,6 +338,35 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB) (appsv1.Stat
 				},
 			},
 		},
+	}
+
+	// Add ILP mount if needed
+	if s.IlpSecret != nil {
+		sts.Spec.Template.Spec.Containers[0].VolumeMounts = append(sts.Spec.Template.Spec.Containers[0].VolumeMounts, v1.VolumeMount{
+			Name:      "ilp",
+			MountPath: "/var/lib/questdb/auth",
+			SubPath:   "auth.json",
+		})
+
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, v1.Volume{
+			Name: "ilp",
+			VolumeSource: v1.VolumeSource{
+				Secret: &v1.SecretVolumeSource{
+					SecretName: s.IlpSecret.Name,
+				},
+			},
+		})
+	}
+
+	// Add PSQL env var mount if needed
+	if s.PsqlSecret != nil {
+		sts.Spec.Template.Spec.Containers[0].EnvFrom = append(sts.Spec.Template.Spec.Containers[0].EnvFrom, v1.EnvFromSource{
+			SecretRef: &v1.SecretEnvSource{
+				LocalObjectReference: v1.LocalObjectReference{
+					Name: s.PsqlSecret.Name,
+				},
+			},
+		})
 	}
 
 	err = ctrl.SetControllerReference(q, &sts, r.Scheme)
@@ -413,21 +456,30 @@ func (r *QuestDBReconciler) buildPvc(q *crdv1beta1.QuestDB) (v1.PersistentVolume
 
 }
 
-func buildDbConfigSuffix(q *crdv1beta1.QuestDB) string {
+func buildDbConfigSuffix(q *crdv1beta1.QuestDB, secrets secrets.QuestDBSecrets) string {
 	dbConfig := strings.Builder{}
 	dbConfig.WriteRune('\n')
-	dbConfig.WriteString("### Reserved values -- set by the operator\n")
-	dbConfig.WriteString(fmt.Sprintf("http.bind.to=%d\n", q.PortHttp()))
-	dbConfig.WriteString(fmt.Sprintf("line.tcp.net.bind.to=%d\n", q.PortIlp()))
-	dbConfig.WriteString(fmt.Sprintf("pg.net.bind.to=%d\n", q.PortPsql()))
+	dbConfig.WriteString("### Reserved values -- set by the operator ###\n")
+	dbConfig.WriteString(fmt.Sprintf("http.bind.to=0.0.0.0:%d\n", q.PortHttp()))
+	dbConfig.WriteString(fmt.Sprintf("line.tcp.net.bind.to=0.0.0.0:%d\n", q.PortIlp()))
+	dbConfig.WriteString(fmt.Sprintf("pg.net.bind.to=0.0.0.0:%d\n", q.PortPsql()))
+
+	if secrets.IlpSecret != nil {
+		dbConfig.WriteString(fmt.Sprintf("ilp.auth.file=%s\n", "/var/lib/questdb/auth/auth.json")) // todo: make auth.json location/name configurable?
+	}
 
 	return dbConfig.String()
 }
 
-func (r *QuestDBReconciler) buildConfigMap(q *crdv1beta1.QuestDB) (v1.ConfigMap, error) {
+func (r *QuestDBReconciler) buildConfigMap(q *crdv1beta1.QuestDB, s secrets.QuestDBSecrets) (v1.ConfigMap, error) {
 	// todo: Run some validation on the config, probably in the webhook
 	// todo: Probably move credentials to a secret
 	var err error
+
+	logConfig := q.Spec.Config.LogConfig
+	if logConfig == "" {
+		logConfig = defaultLogConf
+	}
 
 	cm := v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -436,8 +488,10 @@ func (r *QuestDBReconciler) buildConfigMap(q *crdv1beta1.QuestDB) (v1.ConfigMap,
 			Labels:    q.Labels,
 		},
 		Data: map[string]string{
-			"questdb.conf": q.Spec.Config.DbConfig + buildDbConfigSuffix(q),
-			"log.conf":     q.Spec.Config.LogConfig,
+			"server.conf": q.Spec.Config.ServerConfig + buildDbConfigSuffix(q, s),
+			// todo: add default log conf if nothing is specified
+			"log.conf":   logConfig,
+			"mime.types": mimetypes,
 		},
 	}
 

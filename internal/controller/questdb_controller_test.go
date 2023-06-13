@@ -78,10 +78,10 @@ var _ = Describe("QuestDB Controller", func() {
 				return k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, cm)
 			}, timeout, interval).Should(Succeed())
 
-			config := cm.Data["questdb.conf"]
-			Expect(config).To(ContainSubstring("line.tcp.net.bind.to=9009"))
-			Expect(config).To(ContainSubstring("pg.net.bind.to=8812"))
-			Expect(config).To(ContainSubstring("http.bind.to=9000"))
+			config := cm.Data["server.conf"]
+			Expect(config).To(ContainSubstring("line.tcp.net.bind.to=0.0.0.0:9009"))
+			Expect(config).To(ContainSubstring("pg.net.bind.to=0.0.0.0:8812"))
+			Expect(config).To(ContainSubstring("http.bind.to=0.0.0.0:9000"))
 
 			By("Check the service port values")
 			svc := &v1.Service{}
@@ -132,10 +132,10 @@ var _ = Describe("QuestDB Controller", func() {
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, cm)).To(Succeed())
 
-				config := cm.Data["questdb.conf"]
-				g.Expect(config).To(ContainSubstring("line.tcp.net.bind.to=1234"))
-				g.Expect(config).To(ContainSubstring("pg.net.bind.to=5678"))
-				g.Expect(config).To(ContainSubstring("http.bind.to=9012"))
+				config := cm.Data["server.conf"]
+				g.Expect(config).To(ContainSubstring("line.tcp.net.bind.to=0.0.0.0:1234"))
+				g.Expect(config).To(ContainSubstring("pg.net.bind.to=0.0.0.0:5678"))
+				g.Expect(config).To(ContainSubstring("http.bind.to=0.0.0.0:9012"))
 			}, timeout, interval).Should(Succeed())
 
 			By("Check the service port values")

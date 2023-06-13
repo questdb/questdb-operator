@@ -868,9 +868,9 @@ spec:
                 type: object
               config:
                 properties:
-                  dbConfig:
-                    type: string
                   logConfig:
+                    type: string
+                  serverConfig:
                     type: string
                 type: object
               extraEnv:
