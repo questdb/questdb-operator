@@ -568,4 +568,19 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 		})
 	})
 
+	It("Should set the value of backoff limit to the default if it is not set", func() {
+		snap := buildMockQuestDBSnapshot(buildMockQuestDB())
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+			snap.Spec.JobBackoffLimit = 0
+			g.Expect(k8sClient.Update(ctx, snap)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		By("Checking if the backoff limit is set to the default value")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+			g.Expect(snap.Spec.JobBackoffLimit).To(Equal(crdv1beta1.JobBackoffLimitDefault))
+		}, timeout, interval).Should(Succeed())
+	})
+
 })

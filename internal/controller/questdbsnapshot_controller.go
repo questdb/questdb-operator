@@ -87,6 +87,15 @@ func (r *QuestDBSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, nil
 	}
 
+	// Set default value for job backoff limit in case it is not set
+	if snap.Spec.JobBackoffLimit == 0 {
+		snap.Spec.JobBackoffLimit = crdv1beta1.JobBackoffLimitDefault
+		err = r.Update(ctx, snap)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	switch snap.Status.Phase {
 	case "":
 		return r.handlePhaseEmpty(ctx, snap)

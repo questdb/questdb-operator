@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	JobBackoffLimitDefault = 5
+	JobBackoffLimitDefault int32 = 5
 )
 
 // log is for logging in this package.
