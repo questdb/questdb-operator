@@ -22,6 +22,9 @@ spec:
     - jsonPath: .status.snapshotPhase
       name: Last Snapshot
       type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
     name: v1beta1
     schema:
       openAPIV3Schema:

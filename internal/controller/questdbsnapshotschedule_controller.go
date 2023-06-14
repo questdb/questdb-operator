@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -165,8 +166,7 @@ func (r *QuestDBSnapshotScheduleReconciler) buildSnapshot(sched *crdv1beta1.Ques
 
 func (r *QuestDBSnapshotScheduleReconciler) getLatest(ctx context.Context, sched *crdv1beta1.QuestDBSnapshotSchedule) (*crdv1beta1.QuestDBSnapshot, error) {
 	var (
-		err        error
-		latestSnap *crdv1beta1.QuestDBSnapshot
+		err error
 
 		snapList = &crdv1beta1.QuestDBSnapshotList{}
 	)
@@ -175,18 +175,25 @@ func (r *QuestDBSnapshotScheduleReconciler) getLatest(ctx context.Context, sched
 		return nil, err
 	}
 
-	for idx, s := range snapList.Items {
-		if latestSnap == nil {
-			latestSnap = &snapList.Items[idx]
-			continue
-		}
+	// Sort in descending order so we can garbage collect
+	sort.Slice(snapList.Items, func(i, j int) bool {
+		return !snapList.Items[i].CreationTimestamp.Before(&snapList.Items[j].CreationTimestamp)
+	})
 
-		if s.CreationTimestamp.After(latestSnap.CreationTimestamp.Time) {
-			latestSnap = &snapList.Items[idx]
+	if len(snapList.Items) == 0 {
+		return nil, nil
+	}
+
+	for idx, s := range snapList.Items {
+		if idx >= int(sched.Spec.Retention) {
+			if err = r.Delete(ctx, &s); err != nil {
+				return nil, err
+			}
+			r.Recorder.Event(sched, "Normal", "SnapshotDeleted", fmt.Sprintf("Deleted snapshot: %s", s.Name))
 		}
 	}
 
-	return latestSnap, nil
+	return &snapList.Items[0], nil
 
 }
 

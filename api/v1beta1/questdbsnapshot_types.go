@@ -57,6 +57,7 @@ type QuestDBSnapshotStatus struct {
 //+kubebuilder:subresource:status
 //+kubebuilder:resource:shortName=qdbsnap;qdbsnaps
 //+kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+//+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // QuestDBSnapshot is the Schema for the snapshots API
 type QuestDBSnapshot struct {
