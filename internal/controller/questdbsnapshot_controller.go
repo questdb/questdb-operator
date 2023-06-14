@@ -515,7 +515,7 @@ func (r *QuestDBSnapshotReconciler) handlePhaseSucceeded(ctx context.Context, sn
 			return ctrl.Result{}, err
 		}
 		if err = r.Delete(ctx, job); err != nil {
-			return ctrl.Result{}, err
+			return ctrl.Result{}, client.IgnoreNotFound(err)
 		}
 	}
 	return ctrl.Result{}, nil

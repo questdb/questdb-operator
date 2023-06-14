@@ -95,12 +95,18 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 		dueForSnapshot = time.Now().After(sched.Status.NextSnapshot.Time)
 	}
 
+	nextSnapshotTime, err := getNextSnapshotTime(sched)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	requeueTime := time.Until(nextSnapshotTime)
+	if requeueTime < 0 {
+		requeueTime = 0
+	}
+
 	if dueForSnapshot {
 		// Update the next snapshot time
-		nextSnapshotTime, err := getNextSnapshotTime(sched)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
 		sched.Status.NextSnapshot = metav1.NewTime(nextSnapshotTime)
 		if err = r.Status().Update(ctx, sched); err != nil {
 			return ctrl.Result{}, err
@@ -121,14 +127,14 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 		// Create the snapshot
 		if err = r.Create(ctx, &snap); err != nil {
 			r.Recorder.Event(sched, "Warning", "SnapshotFailed", fmt.Sprintf("Failed to create snapshot: %s", err))
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: requeueTime}, err
 		}
 
 		r.Recorder.Event(sched, "Normal", "SnapshotCreated", fmt.Sprintf("Created snapshot: %s", snap.Name))
 
 	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: requeueTime}, err
 }
 
 // SetupWithManager sets up the controller with the Manager.
