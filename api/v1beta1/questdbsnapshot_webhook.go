@@ -56,23 +56,41 @@ func (r *QuestDBSnapshot) Default() {
 
 var _ webhook.Validator = &QuestDBSnapshot{}
 
-// ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *QuestDBSnapshot) ValidateCreate() error {
-	questdbsnapshotlog.Info("validate create", "name", r.Name)
-
-	if r.Spec.QuestDBName == "" {
+func validateSnapshotCreate(spec QuestDBSnapshotSpec) error {
+	if spec.QuestDBName == "" {
 		return errors.New("QuestDBName is required")
 	}
 
-	if r.Spec.VolumeSnapshotClassName == "" {
+	if spec.VolumeSnapshotClassName == "" {
 		return errors.New("VolumeSnapshotClassName is required")
 	}
 
-	if r.Spec.JobBackoffLimit <= 0 {
+	if spec.JobBackoffLimit <= 0 {
 		return errors.New("JobBackoffLimit must be greater than 0")
 	}
 
 	return nil
+}
+
+func validateSnapshotUpdate(oldSpec, newSpec QuestDBSnapshotSpec) error {
+	if newSpec.QuestDBName != oldSpec.QuestDBName {
+		return errors.New("QuestDBName is immutable")
+	}
+
+	if newSpec.VolumeSnapshotClassName != oldSpec.VolumeSnapshotClassName {
+		return errors.New("VolumeSnapshotClassName is immutable")
+	}
+
+	if newSpec.JobBackoffLimit != oldSpec.JobBackoffLimit {
+		return errors.New("JobBackoffLimit is immutable")
+	}
+	return nil
+}
+
+// ValidateCreate implements webhook.Validator so a webhook will be registered for the type
+func (r *QuestDBSnapshot) ValidateCreate() error {
+	questdbsnapshotlog.Info("validate create", "name", r.Name)
+	return validateSnapshotCreate(r.Spec)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
@@ -84,19 +102,7 @@ func (r *QuestDBSnapshot) ValidateUpdate(old runtime.Object) error {
 		return errors.New("old object is not a QuestDBSnapshot")
 	}
 
-	if r.Spec.QuestDBName != oldSnap.Spec.QuestDBName {
-		return errors.New("QuestDBName is immutable")
-	}
-
-	if r.Spec.VolumeSnapshotClassName != oldSnap.Spec.VolumeSnapshotClassName {
-		return errors.New("VolumeSnapshotClassName is immutable")
-	}
-
-	if r.Spec.JobBackoffLimit != oldSnap.Spec.JobBackoffLimit {
-		return errors.New("JobBackoffLimit is immutable")
-	}
-
-	return nil
+	return validateSnapshotUpdate(oldSnap.Spec, r.Spec)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type

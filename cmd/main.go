@@ -126,6 +126,10 @@ func main() {
 		setupLog.Error(err, "unable to create webhook", "webhook", "QuestDB")
 		os.Exit(1)
 	}
+	if err = (&crdv1beta1.QuestDBSnapshotSchedule{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "QuestDBSnapshotSchedule")
+		os.Exit(1)
+	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

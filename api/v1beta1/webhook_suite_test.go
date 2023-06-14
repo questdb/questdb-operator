@@ -109,6 +109,9 @@ var _ = BeforeSuite(func() {
 	err = (&QuestDB{}).SetupWebhookWithManager(mgr)
 	Expect(err).NotTo(HaveOccurred())
 
+	err = (&QuestDBSnapshotSchedule{}).SetupWebhookWithManager(mgr)
+	Expect(err).NotTo(HaveOccurred())
+
 	//+kubebuilder:scaffold:webhook
 
 	go func() {

@@ -62,7 +62,25 @@ var _ = Describe("QuestDBSnapshot Webhook", func() {
 
 	})
 
-	Context("When validating QuestDB Updates", func() {
+	Context("When validating QuestDBSnapshot Updates", func() {
+
+		It("should reject updates to questdb names", func() {
+			Expect(k8sClient.Create(ctx, snap)).To(Succeed())
+			snap.Spec.QuestDBName = "foo"
+			Expect(k8sClient.Update(ctx, snap)).ToNot(Succeed())
+		})
+
+		It("should reject updates to volume snapshot class names", func() {
+			Expect(k8sClient.Create(ctx, snap)).To(Succeed())
+			snap.Spec.VolumeSnapshotClassName = "foo"
+			Expect(k8sClient.Update(ctx, snap)).ToNot(Succeed())
+		})
+
+		It("should reject updates to backoff limit", func() {
+			Expect(k8sClient.Create(ctx, snap)).To(Succeed())
+			snap.Spec.JobBackoffLimit = 500
+			Expect(k8sClient.Update(ctx, snap)).ToNot(Succeed())
+		})
 	})
 
 })
