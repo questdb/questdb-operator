@@ -18,7 +18,11 @@ spec:
     singular: questdbsnapshotschedule
   scope: Namespaced
   versions:
-  - name: v1beta1
+  - additionalPrinterColumns:
+    - jsonPath: .status.snapshotPhase
+      name: Last Snapshot
+      type: string
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: QuestDBSnapshotSchedule is the Schema for the snapshotschedules

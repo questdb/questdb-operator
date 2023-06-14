@@ -36,6 +36,7 @@ type QuestDBSnapshotScheduleStatus struct {
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 //+kubebuilder:resource:shortName=qdbsched;qdbscheds
+//+kubebuilder:printcolumn:name="Last Snapshot",type=string,JSONPath=`.status.snapshotPhase`
 
 // QuestDBSnapshotSchedule is the Schema for the snapshotschedules API
 type QuestDBSnapshotSchedule struct {
