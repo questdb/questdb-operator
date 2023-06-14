@@ -22,10 +22,9 @@ import (
 
 // QuestDBSnapshotScheduleSpec defines the desired state of QuestDBSnapshotSchedule
 type QuestDBSnapshotScheduleSpec struct {
-	Schedule           string              `json:"schedule"`
-	Retention          int32               `json:"retention"`
-	Snapshot           QuestDBSnapshotSpec `json:"snapshot,omitempty"`
-	ServiceAccountName string              `json:"serviceAccountName"`
+	Schedule  string              `json:"schedule"`
+	Retention int32               `json:"retention"`
+	Snapshot  QuestDBSnapshotSpec `json:"snapshot"`
 }
 
 // QuestDBSnapshotStatus defines the observed state of QuestDBSnapshot

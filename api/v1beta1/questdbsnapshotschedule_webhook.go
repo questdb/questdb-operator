@@ -27,6 +27,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
+const (
+	ScheduleRetentionDefault int32 = 7
+)
+
 // log is for logging in this package.
 var questdbsnapshotschedulelog = logf.Log.WithName("questdbsnapshotschedule-resource")
 
@@ -46,6 +50,10 @@ func (r *QuestDBSnapshotSchedule) Default() {
 
 	if r.Spec.Snapshot.JobBackoffLimit == 0 {
 		r.Spec.Snapshot.JobBackoffLimit = JobBackoffLimitDefault
+	}
+
+	if r.Spec.Retention == 0 {
+		r.Spec.Retention = ScheduleRetentionDefault
 	}
 }
 

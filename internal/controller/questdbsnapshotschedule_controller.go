@@ -63,18 +63,30 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Set retention if it is not set
+	if sched.Spec.Retention == 0 {
+		sched.Spec.Retention = crdv1beta1.ScheduleRetentionDefault
+		if err = r.Update(ctx, sched); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	// Get the latest snapshot, if it exists
 	if latestSnap, err = r.getLatest(ctx, sched); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	// Update the snapshot phase status
-	if latestSnap.Status.Phase != sched.Status.SnapshotPhase {
-		sched.Status.SnapshotPhase = latestSnap.Status.Phase
-		if err = r.Status().Update(ctx, sched); err != nil {
-			return ctrl.Result{}, err
+	if latestSnap != nil {
+		if latestSnap.Status.Phase != sched.Status.SnapshotPhase {
+			sched.Status.SnapshotPhase = latestSnap.Status.Phase
+			if err = r.Status().Update(ctx, sched); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 	}
+
+	// todo: handle retention schedule
 
 	// Check if we are due for a snapshot
 	if sched.Status.NextSnapshot.IsZero() {
@@ -95,7 +107,7 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 		}
 
 		// Skip taking a snapshot if the latest snapshot is not complete
-		if latestSnap.Status.Phase != crdv1beta1.SnapshotSucceeded {
+		if latestSnap != nil && latestSnap.Status.Phase != crdv1beta1.SnapshotSucceeded {
 			r.Recorder.Event(sched, "Warning", "SnapshotSkipped", fmt.Sprintf("Skipping snapshot because the latest snapshot is not complete: %s", latestSnap.Name))
 			return ctrl.Result{}, nil
 		}

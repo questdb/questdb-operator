@@ -45,8 +45,6 @@ spec:
                 type: integer
               schedule:
                 type: string
-              serviceAccountName:
-                type: string
               snapshot:
                 description: QuestDBSnapshotSpec defines the desired state of QuestDBSnapshot
                 properties:
@@ -64,7 +62,7 @@ spec:
             required:
             - retention
             - schedule
-            - serviceAccountName
+            - snapshot
             type: object
           status:
             description: QuestDBSnapshotStatus defines the observed state of QuestDBSnapshot
