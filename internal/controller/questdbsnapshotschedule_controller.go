@@ -22,9 +22,12 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	cron "github.com/robfig/cron/v3"
 
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 
@@ -34,7 +37,8 @@ import (
 // QuestDBSnapshotScheduleReconciler reconciles a QuestDBSnapshotSchedule object
 type QuestDBSnapshotScheduleReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbsnapshotschedules,verbs=get;list;watch;create;update;patch;delete
@@ -46,16 +50,72 @@ type QuestDBSnapshotScheduleReconciler struct {
 // move the current state of the cluster closer to the desired state.
 func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var (
-		err error
+		err            error
+		dueForSnapshot bool
 
-		sched = &crdv1beta1.QuestDBSnapshotSchedule{}
-		_     = log.FromContext(ctx)
+		sched      = &crdv1beta1.QuestDBSnapshotSchedule{}
+		latestSnap = &crdv1beta1.QuestDBSnapshot{}
+		_          = log.FromContext(ctx)
 	)
 
 	// Try to get the object we are reconciling.  Exit if it does not exist
 	if err = r.Get(ctx, req.NamespacedName, sched); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+
+	// Get the latest snapshot, if it exists
+	if latestSnap, err = r.getLatest(ctx, sched); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Update the snapshot phase status
+	if latestSnap.Status.Phase != sched.Status.SnapshotPhase {
+		sched.Status.SnapshotPhase = latestSnap.Status.Phase
+		if err = r.Status().Update(ctx, sched); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Check if we are due for a snapshot
+	if sched.Status.NextSnapshot.IsZero() {
+		dueForSnapshot = true
+	} else {
+		dueForSnapshot = time.Now().After(sched.Status.NextSnapshot.Time)
+	}
+
+	if dueForSnapshot {
+		// Update the next snapshot time
+		nextSnapshotTime, err := getNextSnapshotTime(sched)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		sched.Status.NextSnapshot = metav1.NewTime(nextSnapshotTime)
+		if err = r.Status().Update(ctx, sched); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Skip taking a snapshot if the latest snapshot is not complete
+		if latestSnap.Status.Phase != crdv1beta1.SnapshotSucceeded {
+			r.Recorder.Event(sched, "Warning", "SnapshotSkipped", fmt.Sprintf("Skipping snapshot because the latest snapshot is not complete: %s", latestSnap.Name))
+			return ctrl.Result{}, nil
+		}
+
+		// Build the snapshot
+		snap, err := r.buildSnapshot(sched)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Create the snapshot
+		if err = r.Create(ctx, &snap); err != nil {
+			r.Recorder.Event(sched, "Warning", "SnapshotFailed", fmt.Sprintf("Failed to create snapshot: %s", err))
+			return ctrl.Result{}, err
+		}
+
+		r.Recorder.Event(sched, "Normal", "SnapshotCreated", fmt.Sprintf("Created snapshot: %s", snap.Name))
+
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -83,4 +143,45 @@ func (r *QuestDBSnapshotScheduleReconciler) buildSnapshot(sched *crdv1beta1.Ques
 	err = ctrl.SetControllerReference(sched, &snap, r.Scheme)
 	return snap, err
 
+}
+
+func (r *QuestDBSnapshotScheduleReconciler) getLatest(ctx context.Context, sched *crdv1beta1.QuestDBSnapshotSchedule) (*crdv1beta1.QuestDBSnapshot, error) {
+	var (
+		err        error
+		latestSnap *crdv1beta1.QuestDBSnapshot
+
+		snapList = &crdv1beta1.QuestDBSnapshotList{}
+	)
+
+	if err = r.List(ctx, snapList, client.InNamespace(sched.Namespace)); err != nil {
+		return nil, err
+	}
+
+	for idx, s := range snapList.Items {
+		if latestSnap == nil {
+			latestSnap = &snapList.Items[idx]
+			continue
+		}
+
+		if s.CreationTimestamp.After(latestSnap.CreationTimestamp.Time) {
+			latestSnap = &snapList.Items[idx]
+		}
+	}
+
+	return latestSnap, nil
+
+}
+
+func getNextSnapshotTime(sched *crdv1beta1.QuestDBSnapshotSchedule) (time.Time, error) {
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	crontab, err := parser.Parse(sched.Spec.Schedule)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	lastTime := sched.Status.NextSnapshot.Time
+	if lastTime.IsZero() {
+		lastTime = time.Now()
+	}
+	return crontab.Next(lastTime), nil
 }
