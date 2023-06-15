@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+	"github.com/thejerf/abtime"
 
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 	"github.com/questdb/questdb-operator/internal/controller"
@@ -111,9 +112,10 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controller.QuestDBSnapshotScheduleReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("questdbsnapshotschedule-controller"),
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorderFor("questdbsnapshotschedule-controller"),
+		TimeSource: abtime.NewRealTime(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "QuestDBSnapshotSchedule")
 		os.Exit(1)

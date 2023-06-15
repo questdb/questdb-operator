@@ -22,6 +22,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/thejerf/abtime"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -38,8 +40,9 @@ import (
 // QuestDBSnapshotScheduleReconciler reconciles a QuestDBSnapshotSchedule object
 type QuestDBSnapshotScheduleReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Scheme     *runtime.Scheme
+	Recorder   record.EventRecorder
+	TimeSource abtime.AbstractTime
 }
 
 //+kubebuilder:rbac:groups=crd.questdb.io,resources=questdbsnapshotschedules,verbs=get;list;watch;create;update;patch;delete
@@ -93,10 +96,10 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 	if sched.Status.NextSnapshot.IsZero() {
 		dueForSnapshot = true
 	} else {
-		dueForSnapshot = time.Now().After(sched.Status.NextSnapshot.Time)
+		dueForSnapshot = r.TimeSource.Now().After(sched.Status.NextSnapshot.Time)
 	}
 
-	nextSnapshotTime, err := getNextSnapshotTime(sched)
+	nextSnapshotTime, err := r.getNextSnapshotTime(sched)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -152,7 +155,7 @@ func (r *QuestDBSnapshotScheduleReconciler) buildSnapshot(sched *crdv1beta1.Ques
 	)
 	snap := crdv1beta1.QuestDBSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%s", sched.Name, time.Now().Format("20060102150405")),
+			Name:      fmt.Sprintf("%s-%s", sched.Name, r.TimeSource.Now().Format("20060102150405")),
 			Namespace: sched.Namespace,
 			Labels:    sched.Labels,
 		},
@@ -197,7 +200,7 @@ func (r *QuestDBSnapshotScheduleReconciler) getLatest(ctx context.Context, sched
 
 }
 
-func getNextSnapshotTime(sched *crdv1beta1.QuestDBSnapshotSchedule) (time.Time, error) {
+func (r *QuestDBSnapshotScheduleReconciler) getNextSnapshotTime(sched *crdv1beta1.QuestDBSnapshotSchedule) (time.Time, error) {
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	crontab, err := parser.Parse(sched.Spec.Schedule)
 	if err != nil {
@@ -206,7 +209,7 @@ func getNextSnapshotTime(sched *crdv1beta1.QuestDBSnapshotSchedule) (time.Time, 
 
 	lastTime := sched.Status.NextSnapshot.Time
 	if lastTime.IsZero() {
-		lastTime = time.Now()
+		lastTime = r.TimeSource.Now()
 	}
 	return crontab.Next(lastTime), nil
 }
