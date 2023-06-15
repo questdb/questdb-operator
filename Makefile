@@ -119,7 +119,7 @@ test: download-test-crds manifests generate fmt vet envtest ## Run tests.
 
 .PHONY: integration-test
 integration-test: kind-clean kind-deploy
-	go test ./tests/integration/... -coverprofile cover.out && go tool cover -func=cover.out 2>&1 || true
+	go test ./integration  2>&1 || true
 	make kind-clean
 
 
