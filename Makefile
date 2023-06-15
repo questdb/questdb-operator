@@ -118,9 +118,10 @@ test: download-test-crds manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./api/... ./internal/... -coverprofile cover.out && go tool cover -func=cover.out
 
 .PHONY: integration-test
-integration-test: kind-clean kind-deploy
-	go test ./tests/integration  2>&1 || true
-	make kind-clean
+integration-test: ginkgo kind-clean kind-deploy
+	echo "Waiting for operator to be ready..."
+	sleep 10
+	$(GINKGO) ./tests/integration --slow-spec-threshold 2>&1 || true
 
 
 ##@ Build
@@ -195,10 +196,14 @@ $(LOCALBIN):
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
+GINKGO ?= $(LOCALBIN)/ginkgo
+KIND ?= $(LOCALBIN)/kind
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.7
 CONTROLLER_TOOLS_VERSION ?= v0.11.1
+KIND_VERSION ?= v0.17.0
+GINKGO_VERSION ?= v2.1.4
 
 ## Test CRD Directories
 TEST_CRD_DIR ?= tests/crd/external-snapshotter
@@ -284,23 +289,33 @@ KIND_CLUSTER ?= questdb-operator
 catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
 
+.PHONY: ginkgo
+ginkgo: $(GINKGO) ## Download ginkgo locally if necessary.
+$(GINKGO): $(LOCALBIN)
+	test -s $(LOCALBIN)/ginkgo || GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/v2/ginkgo@$(GINKGO_VERSION)
+
+.PHONY: kind
+kind: $(KIND) ## Download kind locally if necessary.
+$(KIND): $(LOCALBIN)
+	test -s $(LOCALBIN)/kind || GOBIN=$(LOCALBIN) go install sigs.k8s.io/kind@$(KIND_VERSION)
+
 .PHONY: kind-create
-kind-create: docker-build download-test-crds
-	kind create cluster --name $(KIND_CLUSTER)
+kind-create: kind docker-build download-test-crds
+	$(KIND) create cluster --name $(KIND_CLUSTER)
 
 .PHONY: kind-provision
-kind-provision: kind-create docker-build download-test-crds
-	kind load docker-image $(IMG) --name $(KIND_CLUSTER)
+kind-provision: kind kind-create docker-build download-test-crds
+	$(KIND) load docker-image $(IMG) --name $(KIND_CLUSTER)
 	kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.12.0/cert-manager.yaml
 	kubectl apply -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshotclasses.yaml
 	kubectl apply -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshotcontents.yaml
 	kubectl apply -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshots.yaml
 	echo "Waiting for cert-manager to be ready..."
-	sleep 40
+	sleep 45
 
 .PHONY: kind-deploy
-kind-deploy: kind-provision deploy
+kind-deploy: kind kind-provision deploy
 
 .PHONY: kind-clean
-kind-clean:
-	kind delete cluster --name $(KIND_CLUSTER)
+kind-clean: kind
+	$(KIND) delete cluster --name $(KIND_CLUSTER)

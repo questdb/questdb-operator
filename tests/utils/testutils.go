@@ -6,8 +6,8 @@ import (
 	"time"
 
 	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2" //lint:ignore ST1001 Ginkgo DSL
+	. "github.com/onsi/gomega"    //lint:ignore ST1001 Gomega DSL
 
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 	v1 "k8s.io/api/core/v1"
@@ -16,6 +16,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+const (
+	StorageClassName  = "csi-hostpath-sc"
+	CsiProvisioner    = "hostpath.csi.k8s.io"
+	SnapshotClassName = "csi-hostpath-snapclass"
 )
 
 func BuildMockQuestDB(ctx context.Context, c client.Client) *crdv1beta1.QuestDB {
@@ -43,7 +49,7 @@ func BuildMockQuestDB(ctx context.Context, c client.Client) *crdv1beta1.QuestDB 
 		Spec: crdv1beta1.QuestDBSpec{
 			Volume: crdv1beta1.QuestDBVolumeSpec{
 				Size:             resource.MustParse("1Gi"),
-				StorageClassName: pointer.String("csi-hostpath-sc"),
+				StorageClassName: pointer.String(StorageClassName),
 			},
 			Image: "questdb/questdb:latest",
 		},
@@ -63,7 +69,7 @@ func BuildMockQuestDBSnapshot(ctx context.Context, c client.Client, q *crdv1beta
 		},
 		Spec: crdv1beta1.QuestDBSnapshotSpec{
 			QuestDBName:             q.Name,
-			VolumeSnapshotClassName: "csi-hostpath-snapclass",
+			VolumeSnapshotClassName: SnapshotClassName,
 			JobBackoffLimit:         5,
 		},
 	}
@@ -95,15 +101,37 @@ func BuildMockVolumeSnapshot(ctx context.Context, c client.Client, snap *crdv1be
 
 }
 
+func BuildMockQuestDBSnapshotSchedule(ctx context.Context, c client.Client, q *crdv1beta1.QuestDB) *crdv1beta1.QuestDBSnapshotSchedule {
+	By("Creating a QuestDBSnapshotSchedule")
+	sched := &crdv1beta1.QuestDBSnapshotSchedule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      q.Name,
+			Namespace: q.Namespace,
+			Labels:    q.Labels,
+		},
+		Spec: crdv1beta1.QuestDBSnapshotScheduleSpec{
+			Snapshot: crdv1beta1.QuestDBSnapshotSpec{
+				QuestDBName:             q.Name,
+				VolumeSnapshotClassName: SnapshotClassName,
+			},
+			Schedule: "*/1 * * * *",
+		},
+	}
+
+	Expect(c.Create(ctx, sched)).To(Succeed())
+
+	return sched
+}
+
 func BuildMockStorageClass(ctx context.Context, c client.Client) *storagev1.StorageClass {
 	cls := &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "csi-hostpath-sc",
+			Name: StorageClassName,
 		},
 		Parameters: map[string]string{
 			"type": "hostpath",
 		},
-		Provisioner:          "hostpath.csi.k8s.io",
+		Provisioner:          CsiProvisioner,
 		AllowVolumeExpansion: pointer.Bool(true),
 	}
 
