@@ -37,8 +37,7 @@ func BuildMockQuestDB(ctx context.Context, c client.Client) *crdv1beta1.QuestDB 
 		},
 	})).To(Succeed())
 
-	By("Creating a QuestDB")
-	q := &crdv1beta1.QuestDB{
+	return &crdv1beta1.QuestDB{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: ns,
@@ -54,12 +53,17 @@ func BuildMockQuestDB(ctx context.Context, c client.Client) *crdv1beta1.QuestDB 
 			Image: "questdb/questdb:latest",
 		},
 	}
-	Expect(c.Create(ctx, q)).To(Succeed())
+}
 
+func BuildAndCreateMockQuestDB(ctx context.Context, c client.Client) *crdv1beta1.QuestDB {
+
+	By("Creating a QuestDB")
+	q := BuildMockQuestDB(ctx, c)
+	Expect(c.Create(ctx, q)).To(Succeed())
 	return q
 }
 
-func BuildMockQuestDBSnapshot(ctx context.Context, c client.Client, q *crdv1beta1.QuestDB) *crdv1beta1.QuestDBSnapshot {
+func BuildAndCreateMockQuestDBSnapshot(ctx context.Context, c client.Client, q *crdv1beta1.QuestDB) *crdv1beta1.QuestDBSnapshot {
 	By("Creating a QuestDBSnapshot")
 	snap := &crdv1beta1.QuestDBSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
@@ -79,7 +83,7 @@ func BuildMockQuestDBSnapshot(ctx context.Context, c client.Client, q *crdv1beta
 	return snap
 }
 
-func BuildMockVolumeSnapshot(ctx context.Context, c client.Client, snap *crdv1beta1.QuestDBSnapshot) *volumesnapshotv1.VolumeSnapshot {
+func BuildAndCreateMockVolumeSnapshot(ctx context.Context, c client.Client, snap *crdv1beta1.QuestDBSnapshot) *volumesnapshotv1.VolumeSnapshot {
 	By("Creating a VolumeSnapshot")
 	volSnap := &volumesnapshotv1.VolumeSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
@@ -101,7 +105,7 @@ func BuildMockVolumeSnapshot(ctx context.Context, c client.Client, snap *crdv1be
 
 }
 
-func BuildMockQuestDBSnapshotSchedule(ctx context.Context, c client.Client, q *crdv1beta1.QuestDB) *crdv1beta1.QuestDBSnapshotSchedule {
+func BuildAndCreateMockQuestDBSnapshotSchedule(ctx context.Context, c client.Client, q *crdv1beta1.QuestDB) *crdv1beta1.QuestDBSnapshotSchedule {
 	By("Creating a QuestDBSnapshotSchedule")
 	sched := &crdv1beta1.QuestDBSnapshotSchedule{
 		ObjectMeta: metav1.ObjectMeta{
@@ -123,7 +127,7 @@ func BuildMockQuestDBSnapshotSchedule(ctx context.Context, c client.Client, q *c
 	return sched
 }
 
-func BuildMockStorageClass(ctx context.Context, c client.Client) *storagev1.StorageClass {
+func BuildAndCreateMockStorageClass(ctx context.Context, c client.Client) *storagev1.StorageClass {
 	cls := &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: StorageClassName,

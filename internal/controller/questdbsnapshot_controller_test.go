@@ -35,8 +35,8 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 		)
 
 		BeforeAll(func() {
-			q = testutils.BuildMockQuestDB(ctx, k8sClient)
-			snap = testutils.BuildMockQuestDBSnapshot(ctx, k8sClient, q)
+			q = testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
+			snap = testutils.BuildAndCreateMockQuestDBSnapshot(ctx, k8sClient, q)
 		})
 
 		It("Should create a pre-snapshot job when a QuestDBSnapshot is created", func() {
@@ -231,8 +231,8 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 				job = &batchv1.Job{}
 			)
 			BeforeAll(func() {
-				q = testutils.BuildMockQuestDB(ctx, k8sClient)
-				snap = testutils.BuildMockQuestDBSnapshot(ctx, k8sClient, q)
+				q = testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
+				snap = testutils.BuildAndCreateMockQuestDBSnapshot(ctx, k8sClient, q)
 			})
 
 			It("Should set the phase to SnapshotFailed", func() {
@@ -274,8 +274,8 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 			)
 
 			BeforeAll(func() {
-				q = testutils.BuildMockQuestDB(ctx, k8sClient)
-				snap = testutils.BuildMockQuestDBSnapshot(ctx, k8sClient, q)
+				q = testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
+				snap = testutils.BuildAndCreateMockQuestDBSnapshot(ctx, k8sClient, q)
 			})
 
 			It("Should set the phase to SnapshotFailed", func() {
@@ -321,7 +321,7 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 		)
 
 		BeforeEach(func() {
-			snap = testutils.BuildMockQuestDBSnapshot(ctx, k8sClient, testutils.BuildMockQuestDB(ctx, k8sClient))
+			snap = testutils.BuildAndCreateMockQuestDBSnapshot(ctx, k8sClient, testutils.BuildAndCreateMockQuestDB(ctx, k8sClient))
 
 			By("Waiting for the finalizer to be added")
 			Eventually(func(g Gomega) {
@@ -570,7 +570,7 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 	})
 
 	It("Should set the value of backoff limit to the default if it is not set", func() {
-		snap := testutils.BuildMockQuestDBSnapshot(ctx, k8sClient, testutils.BuildMockQuestDB(ctx, k8sClient))
+		snap := testutils.BuildAndCreateMockQuestDBSnapshot(ctx, k8sClient, testutils.BuildAndCreateMockQuestDB(ctx, k8sClient))
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
 			snap.Spec.JobBackoffLimit = 0

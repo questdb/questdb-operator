@@ -23,7 +23,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 
 	BeforeEach(func() {
 
-		q = testutils.BuildMockQuestDB(ctx, k8sClient)
+		q = testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
 
 		sched = &crdv1beta1.QuestDBSnapshotSchedule{
 			ObjectMeta: metav1.ObjectMeta{
