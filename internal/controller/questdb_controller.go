@@ -363,16 +363,6 @@ func (r *QuestDBReconciler) reconcileService(ctx context.Context, q *crdv1beta1.
 		*actual = desired
 	}
 
-	// Update the Service ports if needed
-	if !reflect.DeepEqual(actual.Spec.Ports, q.Spec.Ports) {
-		actual.Spec.Ports = desired.Spec.Ports
-		if err = r.Update(ctx, actual); err != nil {
-			return err
-		}
-
-		r.Recorder.Event(q, v1.EventTypeNormal, "ServiceUpdated", "Service updated")
-	}
-
 	return nil
 }
 

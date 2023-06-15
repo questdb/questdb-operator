@@ -62,10 +62,6 @@ var _ = Describe("QuestDB Controller", func() {
 		})
 
 		It("Should have the correct default ports", func() {
-			By("check the spec port values -- they are 0 by default")
-			Expect(q.Spec.Ports.Ilp).To(Equal(int32(0)))
-			Expect(q.Spec.Ports.Psql).To(Equal(int32(0)))
-			Expect(q.Spec.Ports.Http).To(Equal(int32(0)))
 
 			By("check the configmap port values")
 			cm := &v1.ConfigMap{}

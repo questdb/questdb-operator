@@ -56,7 +56,6 @@ type QuestDBConfigSpec struct {
 type QuestDBSpec struct {
 	Volume QuestDBVolumeSpec `json:"volume"`
 	Config QuestDBConfigSpec `json:"config,omitempty"`
-	Ports  QuestDBPortSpec   `json:"ports,omitempty"`
 
 	Image string `json:"image"`
 
