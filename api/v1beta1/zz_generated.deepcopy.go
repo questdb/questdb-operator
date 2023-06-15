@@ -347,7 +347,6 @@ func (in *QuestDBSpec) DeepCopyInto(out *QuestDBSpec) {
 	*out = *in
 	in.Volume.DeepCopyInto(&out.Volume)
 	out.Config = in.Config
-	out.Ports = in.Ports
 	if in.Affinity != nil {
 		in, out := &in.Affinity, &out.Affinity
 		*out = new(v1.Affinity)

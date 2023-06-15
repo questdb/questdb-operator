@@ -119,7 +119,7 @@ test: download-test-crds manifests generate fmt vet envtest ## Run tests.
 
 .PHONY: integration-test
 integration-test: kind-clean kind-deploy
-	go test ./integration  2>&1 || true
+	go test ./tests/integration  2>&1 || true
 	make kind-clean
 
 

@@ -6,7 +6,7 @@ import (
 )
 
 var _ = Describe("QuestDB Integration Test", func() {
-	It("should do something", func() {
+	It("should spin up all expected resources, using properly-defined secrets", func() {
 		Expect(true).To(BeTrue())
 	})
 })

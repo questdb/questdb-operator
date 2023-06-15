@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
+	testutils "github.com/questdb/questdb-operator/tests/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -22,7 +23,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 
 	BeforeEach(func() {
 
-		q = buildMockQuestDB()
+		q = testutils.BuildMockQuestDB(ctx, k8sClient)
 
 		sched = &crdv1beta1.QuestDBSnapshotSchedule{
 			ObjectMeta: metav1.ObjectMeta{

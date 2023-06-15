@@ -11,6 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	testutils "github.com/questdb/questdb-operator/tests/utils"
 )
 
 var _ = Describe("QuestDB Controller", func() {
@@ -24,10 +26,10 @@ var _ = Describe("QuestDB Controller", func() {
 		Skip("this test doesn't work in envtest, but it is tested against the ebs csi")
 
 		By("Creating a storageclass that allows resizing")
-		buildMockStorageClass()
+		testutils.BuildMockStorageClass(ctx, k8sClient)
 
 		By("Creating a new QuestDB")
-		q := buildMockQuestDB()
+		q := testutils.BuildMockQuestDB(ctx, k8sClient)
 
 		By("Verifying the pvc has been created")
 		pvc := &v1.PersistentVolumeClaim{}
@@ -58,7 +60,7 @@ var _ = Describe("QuestDB Controller", func() {
 		)
 		BeforeEach(func() {
 			By("Creating a new QuestDB")
-			q = buildMockQuestDB()
+			q = testutils.BuildMockQuestDB(ctx, k8sClient)
 		})
 
 		It("Should have the correct default ports", func() {
@@ -101,7 +103,7 @@ var _ = Describe("QuestDB Controller", func() {
 
 	It("should not reconcile annotations on the statefulset", func() {
 		By("Creating a new QuestDB")
-		q := buildMockQuestDB()
+		q := testutils.BuildMockQuestDB(ctx, k8sClient)
 
 		By("Verifying the statefulset has been created")
 		sts := &appsv1.StatefulSet{}

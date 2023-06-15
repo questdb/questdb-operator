@@ -1,6 +1,7 @@
-package controller
+package utils
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -14,16 +15,17 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func buildMockQuestDB() *crdv1beta1.QuestDB {
+func BuildMockQuestDB(ctx context.Context, c client.Client) *crdv1beta1.QuestDB {
 	var (
 		name = "test-questdb"
 		ns   = fmt.Sprintf("test-ns-%d", time.Now().UnixNano())
 	)
 
 	By("Creating a namespace")
-	Expect(k8sClient.Create(ctx, &v1.Namespace{
+	Expect(c.Create(ctx, &v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: ns,
 		},
@@ -46,12 +48,12 @@ func buildMockQuestDB() *crdv1beta1.QuestDB {
 			Image: "questdb/questdb:latest",
 		},
 	}
-	Expect(k8sClient.Create(ctx, q)).To(Succeed())
+	Expect(c.Create(ctx, q)).To(Succeed())
 
 	return q
 }
 
-func buildMockQuestDBSnapshot(q *crdv1beta1.QuestDB) *crdv1beta1.QuestDBSnapshot {
+func BuildMockQuestDBSnapshot(ctx context.Context, c client.Client, q *crdv1beta1.QuestDB) *crdv1beta1.QuestDBSnapshot {
 	By("Creating a QuestDBSnapshot")
 	snap := &crdv1beta1.QuestDBSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
@@ -66,12 +68,12 @@ func buildMockQuestDBSnapshot(q *crdv1beta1.QuestDB) *crdv1beta1.QuestDBSnapshot
 		},
 	}
 
-	Expect(k8sClient.Create(ctx, snap)).To(Succeed())
+	Expect(c.Create(ctx, snap)).To(Succeed())
 
 	return snap
 }
 
-func buildMockVolumeSnapshot(snap *crdv1beta1.QuestDBSnapshot) *volumesnapshotv1.VolumeSnapshot {
+func BuildMockVolumeSnapshot(ctx context.Context, c client.Client, snap *crdv1beta1.QuestDBSnapshot) *volumesnapshotv1.VolumeSnapshot {
 	By("Creating a VolumeSnapshot")
 	volSnap := &volumesnapshotv1.VolumeSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
@@ -87,13 +89,13 @@ func buildMockVolumeSnapshot(snap *crdv1beta1.QuestDBSnapshot) *volumesnapshotv1
 		},
 	}
 
-	Expect(k8sClient.Create(ctx, volSnap)).To(Succeed())
+	Expect(c.Create(ctx, volSnap)).To(Succeed())
 
 	return volSnap
 
 }
 
-func buildMockStorageClass() *storagev1.StorageClass {
+func BuildMockStorageClass(ctx context.Context, c client.Client) *storagev1.StorageClass {
 	cls := &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "csi-hostpath-sc",
@@ -105,7 +107,7 @@ func buildMockStorageClass() *storagev1.StorageClass {
 		AllowVolumeExpansion: pointer.Bool(true),
 	}
 
-	Expect(k8sClient.Create(ctx, cls)).To(Succeed())
+	Expect(c.Create(ctx, cls)).To(Succeed())
 
 	return cls
 }
