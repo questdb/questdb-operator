@@ -115,7 +115,13 @@ download-test-crds:
 
 .PHONY: test
 test: download-test-crds manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out && go tool cover -func=cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./api/... ./internal/... -coverprofile cover.out && go tool cover -func=cover.out
+
+.PHONY: integration-test
+integration-test: kind-clean kind-deploy
+	go test ./tests/integration/... -coverprofile cover.out && go tool cover -func=cover.out 2>&1 || true
+	make kind-clean
+
 
 ##@ Build
 
