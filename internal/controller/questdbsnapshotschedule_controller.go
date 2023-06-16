@@ -90,8 +90,6 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 		}
 	}
 
-	// todo: handle retention schedule
-
 	// Check if we are due for a snapshot
 	if sched.Status.NextSnapshot.IsZero() {
 		dueForSnapshot = true
