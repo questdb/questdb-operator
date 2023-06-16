@@ -10,23 +10,33 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// QuestDBSecrets is a container for v1.Secrets that may be used
+// as credentials for a QuestDB instance.
 type QuestDBSecrets struct {
 	IlpSecret  *v1.Secret
 	PsqlSecret *v1.Secret
 }
 
-func GetSecrets(ctx context.Context, c client.Client, n types.NamespacedName) (QuestDBSecrets, error) {
+// GetSecrets uses annotations to find secrets that are related to the QuestDB defined by the
+// provided NamespacedName. Currently, 2 types of secrets are supported: a JWK for securing ILP
+// connections, and a username/password combination for the pgwire connection.
+// If a secret is not found in the same namespace as the QuestDB, it will be nil.
+//
+// Secrets need to have 2 annotations in order to be retrieved by this function:
+// questdb.crd.questdb.io/name=<your-questdb-name>
+// questdb.crd.questdb.io/secret-type=<ilp/psql>
+func GetSecrets(ctx context.Context, c client.Client, qdb types.NamespacedName) (QuestDBSecrets, error) {
 	var (
 		err     error
 		secrets = QuestDBSecrets{}
 	)
 
-	secrets.IlpSecret, err = getIlpSecret(ctx, c, n)
+	secrets.IlpSecret, err = getIlpSecret(ctx, c, qdb)
 	if err != nil {
 		return secrets, err
 	}
 
-	secrets.PsqlSecret, err = getPsqlSecret(ctx, c, n)
+	secrets.PsqlSecret, err = getPsqlSecret(ctx, c, qdb)
 	if err != nil {
 		return secrets, err
 	}
@@ -67,9 +77,9 @@ func validateIlpSecret(secret *v1.Secret, n types.NamespacedName) error {
 	}
 
 	if val, found := secret.Data["auth.json"]; !found {
-		return fmt.Errorf("ilp secret for questdb %s in namespace %s is missing auth.json", n.Name, n.Namespace)
+		return newInvalidSecretErrorf("ilp secret for questdb %s in namespace %s is missing auth.json", n.Name, n.Namespace)
 	} else if string(val) == "" {
-		return fmt.Errorf("ilp secret for questdb %s in namespace %s has empty auth.json", n.Name, n.Namespace)
+		return newInvalidSecretErrorf("ilp secret for questdb %s in namespace %s has empty auth.json", n.Name, n.Namespace)
 	}
 
 	return nil
@@ -131,7 +141,7 @@ func validatePsqlSecret(s *v1.Secret, n types.NamespacedName) error {
 
 	for _, v := range expectedKeys {
 		if !v {
-			return fmt.Errorf("psql secret for questdb %s in namespace %s is missing required keys", n.Name, n.Namespace)
+			return newInvalidSecretErrorf("psql secret for questdb %s in namespace %s is missing required keys", n.Name, n.Namespace)
 		}
 	}
 

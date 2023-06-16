@@ -197,24 +197,21 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 		})
 
 		It("Should clean up the jobs once the snapshot has succeeded", func() {
-			// We just need to check the deletiontimestamp since there's no job controller to clean up the jobs
 			By("Checking that the pre-snapshot job is deleted")
-			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+			Eventually(func() error {
+				return k8sClient.Get(ctx, client.ObjectKey{
 					Name:      preSnapJob.Name,
 					Namespace: preSnapJob.Namespace,
-				}, preSnapJob)).Should(Succeed())
-				g.Expect(preSnapJob.DeletionTimestamp).NotTo(BeNil())
-			}, timeout, interval).Should(Succeed())
+				}, preSnapJob)
+			}, timeout, interval).ShouldNot(Succeed())
 
 			By("Checking that the post-snapshot job is deleted")
-			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+			Eventually(func() error {
+				return k8sClient.Get(ctx, client.ObjectKey{
 					Name:      postSnapJob.Name,
 					Namespace: postSnapJob.Namespace,
-				}, postSnapJob)).Should(Succeed())
-				g.Expect(postSnapJob.DeletionTimestamp).NotTo(BeNil())
-			}, timeout, interval).Should(Succeed())
+				}, postSnapJob)
+			}, timeout, interval).ShouldNot(Succeed())
 
 		})
 
@@ -395,7 +392,10 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 			BeforeEach(func() {
 				Eventually(func(g Gomega) {
 					By("Setting the phase to SnapshotFinalizing")
-					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+					g.Expect(k8sClient.Get(
+						ctx,
+						client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace},
+						snap)).To(Succeed())
 					snap.Status.Phase = crdv1beta1.SnapshotFinalizing
 					g.Expect(k8sClient.Status().Update(ctx, snap)).To(Succeed())
 				}, timeout, interval).Should(Succeed())
