@@ -513,7 +513,10 @@ func (r *QuestDBSnapshotReconciler) handlePhaseSucceeded(ctx context.Context, sn
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		if err = r.Delete(ctx, job); err != nil {
+		var propagationPolicy = metav1.DeletePropagationBackground
+		if err = r.Delete(ctx, job, &client.DeleteOptions{
+			PropagationPolicy: &propagationPolicy,
+		}); err != nil {
 			return ctrl.Result{}, client.IgnoreNotFound(err)
 		}
 	}

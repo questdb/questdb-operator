@@ -24,6 +24,7 @@ import (
 
 	"github.com/thejerf/abtime"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -128,15 +129,19 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 
 		// Create the snapshot
 		if err = r.Create(ctx, &snap); err != nil {
-			r.Recorder.Event(sched, "Warning", "SnapshotFailed", fmt.Sprintf("Failed to create snapshot: %s", err))
-			return ctrl.Result{RequeueAfter: requeueTime}, err
+			if !apierrors.IsAlreadyExists(err) {
+				r.Recorder.Event(sched, "Warning", "SnapshotFailed", fmt.Sprintf("Failed to create snapshot: %s", err))
+				return ctrl.Result{RequeueAfter: requeueTime}, err
+			}
 		}
 
-		r.Recorder.Event(sched, "Normal", "SnapshotCreated", fmt.Sprintf("Created snapshot: %s", snap.Name))
+		if err == nil {
+			r.Recorder.Event(sched, "Normal", "SnapshotCreated", fmt.Sprintf("Created snapshot: %s", snap.Name))
+		}
 
 	}
 
-	return ctrl.Result{RequeueAfter: requeueTime}, err
+	return ctrl.Result{RequeueAfter: requeueTime}, client.IgnoreAlreadyExists(err)
 }
 
 // SetupWithManager sets up the controller with the Manager.
