@@ -1,17 +1,25 @@
 # questdb-operator
-// TODO(user): Add simple overview of use/purpose
+
+The QuestDB Operator is a group of controllers and webhooks that are designed to manage QuestDB instances running in Kubernetes clusters.
 
 ## Description
 
 ### Prerequisites
 
-- external-snapshotter
-    - install CRDs
-    - install controller
-    - install volumesnapshotclass
-    - set volumesnapshotclass to default
+The QuestDB resource type should be compatible with mainstream Kubernetes distributions, since it orchestrates `v1` and `apps/v1` components like PersistentVolumeClaims, StatefulSets, Services, and ConfigMaps.
 
-    https://aws.amazon.com/blogs/containers/using-ebs-snapshots-for-persistent-storage-with-your-eks-cluster/
+The QuestDBSnapshot resource type requires the [CSI Snapshotter](https://github.com/kubernetes-csi/external-snapshotter) to be installed. This includes installing:
+- CRDs <https://github.com/kubernetes-csi/external-snapshotter/tree/master/client/config/crd>
+- VolumeSnapshot Controller <https://github.com/kubernetes-csi/external-snapshotter/tree/master/pkg/common-controller>
+- VolumeSnapshot Validation Webhook (optional, but recommended) <https://github.com/kubernetes-csi/external-snapshotter/tree/master/pkg/validation-webhook>
+- A CSI Driver that includes the snapshot capability (see <https://kubernetes-csi.github.io/docs/drivers.html> for an up-to-date list of drivers and their features)
+
+Once you've installed the required components, you need to
+- Create a [VolumeSnapshotClass](https://kubernetes.io/docs/concepts/storage/volume-snapshot-classes/) that uses your installed CSI as a driver
+- If you want, you can also add the annotation: `snapshot.storage.kubernetes.io/is-default-class: "true"` to the VolumeSnapshotClass's metadata.
+
+Here's a step-by-step example of this installation in an AWS blg post:
+<https://aws.amazon.com/blogs/containers/using-ebs-snapshots-for-persistent-storage-with-your-eks-cluster/>
 
 - cert manager
 
