@@ -1,0 +1,19 @@
+name: CI
+on: [push]
+jobs:
+  unit-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.18.x', '1.19.x', '1.20.x']
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Display Go version
+        run: go version
+      - name: Unit Test
+        run: make test
