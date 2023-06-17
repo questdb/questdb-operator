@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -62,7 +63,7 @@ var reservedConfigKeys = []string{
 	"line.tcp.auth.db.path",
 }
 
-var validateDbConfig = func(config string) error {
+func validateDbConfig(config string) error {
 	scanner := bufio.NewScanner(strings.NewReader(config))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -73,6 +74,19 @@ var validateDbConfig = func(config string) error {
 		}
 	}
 	return nil
+}
+
+func validateVolumeSpec(config QuestDBVolumeSpec) error {
+	if config.Size.Value() == 0 {
+		return fmt.Errorf("volume size must be greater than 0")
+	}
+
+	if config.SnapshotName != "" && config.Selector != nil {
+		return fmt.Errorf("cannot specify both snapshot name and selector")
+	}
+
+	return nil
+
 }
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
@@ -87,6 +101,10 @@ func (r *QuestDB) ValidateCreate() error {
 		if err := validateDbConfig(r.Spec.Config.ServerConfig); err != nil {
 			return err
 		}
+	}
+
+	if err := validateVolumeSpec(r.Spec.Volume); err != nil {
+		return err
 	}
 
 	return nil
@@ -109,6 +127,31 @@ func (r *QuestDB) ValidateUpdate(old runtime.Object) error {
 		if err := validateDbConfig(r.Spec.Config.ServerConfig); err != nil {
 			return err
 		}
+	}
+
+	// Check that volume specs haven't changed (with the exception of size)
+	if r.Spec.Volume.SnapshotName != oldQdb.Spec.Volume.SnapshotName {
+		return errors.New("cannot change snapshot name")
+	}
+
+	// Check that the volume selector hasn't changed
+	if r.Spec.Volume.Selector != nil && oldQdb.Spec.Volume.Selector != nil {
+		if !reflect.DeepEqual(r.Spec.Volume.Selector, oldQdb.Spec.Volume.Selector) {
+			return errors.New("cannot change snapshot selector")
+		}
+	}
+
+	// Also check if there was a volume selector in the first place
+	if reflect.ValueOf(r.Spec.Volume.Selector) != reflect.ValueOf(oldQdb.Spec.Volume.Selector) {
+		return errors.New("cannot change snapshot selector")
+	}
+
+	if r.Spec.Volume.VolumeName != oldQdb.Spec.Volume.VolumeName {
+		return errors.New("cannot change volume name")
+	}
+
+	if r.Spec.Volume.StorageClassName != oldQdb.Spec.Volume.StorageClassName {
+		return errors.New("cannot change storage class name")
 	}
 
 	return nil
