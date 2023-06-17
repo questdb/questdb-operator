@@ -69,9 +69,8 @@ func (r *QuestDBSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Get the secrets for the questdb
-
-	// Get status of the secrets
+	// Get status of any related secrets. These will be used later to add pgwire credentials
+	// to the pre- and post-snapshot jobs.
 	s, err := secrets.GetSecrets(ctx, r.Client, client.ObjectKeyFromObject(snap))
 	if err != nil {
 		return ctrl.Result{}, err
@@ -236,6 +235,8 @@ func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *c
 	var err error
 
 	if snap.DeletionTimestamp.IsZero() {
+		// If we are not deleting the Snapshot, ensure that the finalizer exists
+
 		if !controllerutil.ContainsFinalizer(snap, crdv1beta1.QuestDBSnapshotFinalizer) {
 			controllerutil.AddFinalizer(snap, crdv1beta1.QuestDBSnapshotFinalizer)
 			if err := r.Update(ctx, snap); err != nil {
@@ -259,6 +260,8 @@ func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *c
 				}
 
 				// If the job has succeeded, we need to finalize the snapshot
+				// So we kick kick off the post-snapshot job by setting the phase
+				// to finalizing, handling that state, and eventually requeueing the request
 				if job.Status.Succeeded == 1 {
 					snap.Status.Phase = crdv1beta1.SnapshotFinalizing
 					err = r.Status().Update(ctx, snap)
@@ -275,6 +278,7 @@ func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *c
 				}
 
 				// If the job is not active, but there are still more attempts, we need to requeue
+				// until either the job has succeeded, or we hit the maximum number of attempts
 				if job.Status.Active == 0 && job.Status.Failed < snap.Spec.JobBackoffLimit {
 					return ctrl.Result{RequeueAfter: 4 * time.Second}, nil
 				}
@@ -289,7 +293,8 @@ func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *c
 				return ctrl.Result{}, err
 
 			case crdv1beta1.SnapshotRunning:
-				// Wait for the snapshot to finish
+				// Wait for the snapshot to finish. This will eventually progress the phase to
+				// finalizing, at which point we will continue with the logic below
 				return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 			case crdv1beta1.SnapshotFinalizing:
 				// Check the status of the post-snapshot job
@@ -328,6 +333,7 @@ func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *c
 
 				return ctrl.Result{}, err
 
+			// If the snapshot succeeded, we can safely delete the snapshot
 			case crdv1beta1.SnapshotSucceeded:
 				controllerutil.RemoveFinalizer(snap, crdv1beta1.QuestDBSnapshotFinalizer)
 				return ctrl.Result{}, r.Update(ctx, snap)

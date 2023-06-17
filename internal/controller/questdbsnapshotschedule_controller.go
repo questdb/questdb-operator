@@ -27,6 +27,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -55,8 +56,7 @@ type QuestDBSnapshotScheduleReconciler struct {
 // move the current state of the cluster closer to the desired state.
 func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var (
-		err            error
-		dueForSnapshot bool
+		err error
 
 		sched      = &crdv1beta1.QuestDBSnapshotSchedule{}
 		latestSnap = &crdv1beta1.QuestDBSnapshot{}
@@ -81,7 +81,7 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 		return ctrl.Result{}, err
 	}
 
-	// Update the snapshot phase status
+	// Update the snapshot phase status based on the latest snapshot
 	if latestSnap != nil {
 		if latestSnap.Status.Phase != sched.Status.SnapshotPhase {
 			sched.Status.SnapshotPhase = latestSnap.Status.Phase
@@ -92,23 +92,19 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 	}
 
 	// Check if we are due for a snapshot
-	if sched.Status.NextSnapshot.IsZero() {
-		dueForSnapshot = true
-	} else {
-		dueForSnapshot = r.TimeSource.Now().After(sched.Status.NextSnapshot.Time)
-	}
-
 	nextSnapshotTime, err := r.getNextSnapshotTime(sched)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
+	// Calculate the requeue time before any modifications
+	// are made to the NextSnapshot time
 	requeueTime := time.Until(nextSnapshotTime)
 	if requeueTime < 0 {
 		requeueTime = 0
 	}
 
-	if dueForSnapshot {
+	if nextSnapshotTime.Before(r.TimeSource.Now()) {
 		// Update the next snapshot time
 		sched.Status.NextSnapshot = metav1.NewTime(nextSnapshotTime)
 		if err = r.Status().Update(ctx, sched); err != nil {
@@ -122,18 +118,18 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 		}
 
 		// Build the snapshot
-		snap, err := r.buildSnapshot(sched)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
+		snap := r.buildSnapshot(sched)
 
-		// Create the snapshot
-		if err = r.Create(ctx, &snap); err != nil {
-			if !apierrors.IsAlreadyExists(err) {
-				r.Recorder.Event(sched, "Warning", "SnapshotFailed", fmt.Sprintf("Failed to create snapshot: %s", err))
-				return ctrl.Result{RequeueAfter: requeueTime}, err
+		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			// Create the snapshot
+			if err = r.Create(ctx, &snap); err != nil {
+				if !apierrors.IsAlreadyExists(err) {
+					r.Recorder.Event(sched, "Warning", "SnapshotFailed", fmt.Sprintf("Failed to create snapshot: %s", err))
+				}
 			}
-		}
+
+			return err
+		})
 
 		if err == nil {
 			r.Recorder.Event(sched, "Normal", "SnapshotCreated", fmt.Sprintf("Created snapshot: %s", snap.Name))
@@ -152,7 +148,7 @@ func (r *QuestDBSnapshotScheduleReconciler) SetupWithManager(mgr ctrl.Manager) e
 		Complete(r)
 }
 
-func (r *QuestDBSnapshotScheduleReconciler) buildSnapshot(sched *crdv1beta1.QuestDBSnapshotSchedule) (crdv1beta1.QuestDBSnapshot, error) {
+func (r *QuestDBSnapshotScheduleReconciler) buildSnapshot(sched *crdv1beta1.QuestDBSnapshotSchedule) crdv1beta1.QuestDBSnapshot {
 	var (
 		err error
 	)
@@ -165,8 +161,11 @@ func (r *QuestDBSnapshotScheduleReconciler) buildSnapshot(sched *crdv1beta1.Ques
 		Spec: sched.Spec.Snapshot,
 	}
 
-	err = ctrl.SetControllerReference(sched, &snap, r.Scheme)
-	return snap, err
+	if err = ctrl.SetControllerReference(sched, &snap, r.Scheme); err != nil {
+		panic(fmt.Sprintf("failed to set controller reference, even though we are building an object from scratch: %s", err.Error()))
+	}
+
+	return snap
 
 }
 
@@ -212,7 +211,7 @@ func (r *QuestDBSnapshotScheduleReconciler) getNextSnapshotTime(sched *crdv1beta
 
 	lastTime := sched.Status.NextSnapshot.Time
 	if lastTime.IsZero() {
-		lastTime = r.TimeSource.Now()
+		lastTime = sched.CreationTimestamp.Time
 	}
 	return crontab.Next(lastTime), nil
 }

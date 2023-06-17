@@ -23,7 +23,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/thejerf/abtime"
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -43,10 +42,9 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var (
-	cfg        *rest.Config
-	k8sClient  client.Client
-	testEnv    *envtest.Environment
-	timeSource = abtime.NewManual()
+	cfg       *rest.Config
+	k8sClient client.Client
+	testEnv   *envtest.Environment
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -101,18 +99,15 @@ var _ = BeforeSuite(func() {
 		Recorder: mgr.GetEventRecorderFor("questdb-controller"),
 	}).SetupWithManager(mgr)).Should(Succeed())
 
-	Expect((&QuestDBSnapshotScheduleReconciler{
-		Client:     mgr.GetClient(),
-		Scheme:     mgr.GetScheme(),
-		Recorder:   mgr.GetEventRecorderFor("questdbsnapshotschedule-controller"),
-		TimeSource: timeSource,
-	}).SetupWithManager(mgr)).Should(Succeed())
-
 	Expect((&QuestDBSnapshotReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("questdbsnapshot-controller"),
 	}).SetupWithManager(mgr)).Should(Succeed())
+
+	// Note: since we cannot mock the manager's time source, we will instantiate
+	// a new QuestDBSnapshotScheduleReconciler with a mock time source and call
+	// Reconcile directly.
 
 	// Start the manager
 	go func() {
