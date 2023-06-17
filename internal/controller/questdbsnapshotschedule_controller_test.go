@@ -114,7 +114,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 
 		It("should take a second snapshot if the cron schedule has triggered", func() {
 			By("Bumping the clock more than 1 minute")
-			timeSource.Advance(time.Minute + time.Second)
+			timeSource.Advance(time.Minute + 3*time.Second)
 
 			By("Forcing a reconcile")
 			_, err := r.Reconcile(ctx, ctrl.Request{
