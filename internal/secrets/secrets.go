@@ -27,48 +27,44 @@ type QuestDBSecrets struct {
 // questdb.crd.questdb.io/secret-type=<ilp/psql>
 func GetSecrets(ctx context.Context, c client.Client, qdb types.NamespacedName) (QuestDBSecrets, error) {
 	var (
-		err     error
-		secrets = QuestDBSecrets{}
+		err        error
+		secrets    = QuestDBSecrets{}
+		secretList = &v1.SecretList{}
 	)
 
-	secrets.IlpSecret, err = getIlpSecret(ctx, c, qdb)
+	err = c.List(ctx, secretList, client.InNamespace(qdb.Namespace))
 	if err != nil {
 		return secrets, err
 	}
 
-	secrets.PsqlSecret, err = getPsqlSecret(ctx, c, qdb)
-	if err != nil {
-		return secrets, err
-	}
-
-	return secrets, nil
-}
-
-func getIlpSecret(ctx context.Context, c client.Client, n types.NamespacedName) (*v1.Secret, error) {
-	var (
-		ilpSecret *v1.Secret
-		err       error
-	)
-
-	secrets := &v1.SecretList{}
-	err = c.List(ctx, secrets, client.InNamespace(n.Namespace))
-	if err != nil {
-		return nil, err
-	}
-
-	for idx, secret := range secrets.Items {
-		if secret.Annotations[crdv1beta1.AnnotationQuestDBName] == n.Name {
-			if secret.Annotations[crdv1beta1.AnnotationQuestDBSecretType] == "ilp" {
-				if ilpSecret != nil {
-					return nil, fmt.Errorf("multiple ilp secrets found for questdb %s in namespace %s", n.Name, n.Namespace)
+	for idx, secret := range secretList.Items {
+		if secret.Annotations[crdv1beta1.AnnotationQuestDBName] == qdb.Name {
+			switch secret.Annotations[crdv1beta1.AnnotationQuestDBSecretType] {
+			case "ilp":
+				if secrets.IlpSecret != nil {
+					return secrets, fmt.Errorf("multiple ilp secrets found for questdb %s in namespace %s", qdb.Name, qdb.Namespace)
 				}
-				ilpSecret = &secrets.Items[idx]
-
+				secrets.IlpSecret = &secretList.Items[idx]
+			case "psql":
+				if secrets.PsqlSecret != nil {
+					return secrets, fmt.Errorf("multiple psql secrets found for questdb %s in namespace %s", qdb.Name, qdb.Namespace)
+				}
+				secrets.PsqlSecret = &secretList.Items[idx]
+			default:
+				return secrets, fmt.Errorf("invalid secret type %s for questdb %s in namespace %s", secret.Annotations[crdv1beta1.AnnotationQuestDBSecretType], qdb.Name, qdb.Namespace)
 			}
 		}
 	}
 
-	return ilpSecret, validateIlpSecret(ilpSecret, n)
+	if err := validateIlpSecret(secrets.IlpSecret, qdb); err != nil {
+		return secrets, err
+	}
+
+	if err := validatePsqlSecret(secrets.PsqlSecret, qdb); err != nil {
+		return secrets, err
+	}
+
+	return secrets, nil
 }
 
 func validateIlpSecret(secret *v1.Secret, n types.NamespacedName) error {
@@ -83,35 +79,6 @@ func validateIlpSecret(secret *v1.Secret, n types.NamespacedName) error {
 	}
 
 	return nil
-}
-
-func getPsqlSecret(ctx context.Context, c client.Client, n types.NamespacedName) (*v1.Secret, error) {
-	var (
-		psqlSecret *v1.Secret
-		err        error
-	)
-
-	secrets := &v1.SecretList{}
-
-	err = c.List(ctx, secrets, client.InNamespace(n.Namespace))
-	if err != nil {
-		return nil, err
-	}
-
-	for idx, secret := range secrets.Items {
-		if secret.Annotations[crdv1beta1.AnnotationQuestDBName] == n.Name {
-			if secret.Annotations[crdv1beta1.AnnotationQuestDBSecretType] == "psql" {
-				if psqlSecret != nil {
-					return nil, fmt.Errorf("multiple psql secrets found for questdb %s in namespace %s", n.Name, n.Namespace)
-				}
-				psqlSecret = &secrets.Items[idx]
-
-			}
-		}
-	}
-
-	return psqlSecret, validatePsqlSecret(psqlSecret, n)
-
 }
 
 func validatePsqlSecret(s *v1.Secret, n types.NamespacedName) error {
