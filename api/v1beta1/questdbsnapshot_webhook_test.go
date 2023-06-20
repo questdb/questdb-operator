@@ -82,11 +82,25 @@ var _ = Describe("QuestDBSnapshot Webhook", func() {
 			Expect(k8sClient.Update(ctx, snap)).ToNot(Succeed())
 		})
 
+		It("should reject nil-to-value changes to volume snapshot class names", func() {
+			snap.Spec.VolumeSnapshotClassName = nil
+			Expect(k8sClient.Create(ctx, snap)).To(Succeed())
+			snap.Spec.VolumeSnapshotClassName = pointer.String("foo")
+			Expect(k8sClient.Update(ctx, snap)).ToNot(Succeed())
+		})
+
 		It("should reject updates to backoff limit", func() {
 			Expect(k8sClient.Create(ctx, snap)).To(Succeed())
 			snap.Spec.JobBackoffLimit = 500
 			Expect(k8sClient.Update(ctx, snap)).ToNot(Succeed())
 		})
+
+		It("should accept updates if nothing has changed and volume snapshot class name is nil", func() {
+			snap.Spec.VolumeSnapshotClassName = nil
+			Expect(k8sClient.Create(ctx, snap)).To(Succeed())
+			Expect(k8sClient.Update(ctx, snap)).To(Succeed())
+		})
+
 	})
 
 })
