@@ -18,6 +18,7 @@ package v1beta1
 
 import (
 	"errors"
+	"reflect"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -61,12 +62,12 @@ func validateSnapshotCreate(spec QuestDBSnapshotSpec) error {
 		return errors.New("QuestDBName is required")
 	}
 
-	if spec.VolumeSnapshotClassName == "" {
-		return errors.New("VolumeSnapshotClassName is required")
-	}
-
 	if spec.JobBackoffLimit <= 0 {
 		return errors.New("JobBackoffLimit must be greater than 0")
+	}
+
+	if spec.VolumeSnapshotClassName != nil && *spec.VolumeSnapshotClassName == "" {
+		return errors.New("VolumeSnapshotClassName must not be empty")
 	}
 
 	return nil
@@ -77,7 +78,7 @@ func validateSnapshotUpdate(oldSpec, newSpec QuestDBSnapshotSpec) error {
 		return errors.New("QuestDBName is immutable")
 	}
 
-	if newSpec.VolumeSnapshotClassName != oldSpec.VolumeSnapshotClassName {
+	if !reflect.DeepEqual(newSpec.VolumeSnapshotClassName, oldSpec.VolumeSnapshotClassName) {
 		return errors.New("VolumeSnapshotClassName is immutable")
 	}
 

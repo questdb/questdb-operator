@@ -69,15 +69,8 @@ func (r *QuestDBSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Get status of any related secrets. These will be used later to add pgwire credentials
-	// to the pre- and post-snapshot jobs.
-	s, err := secrets.GetSecrets(ctx, r.Client, client.ObjectKeyFromObject(snap))
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
 	// Handle finalizer.  This will ensure that the "SNAPSHOT COMPLETE;" is run before the snapshot is deleted
-	if finalizerResult, err := r.handleFinalizer(ctx, snap, s); err != nil {
+	if finalizerResult, err := r.handleFinalizer(ctx, snap); err != nil {
 		return finalizerResult, err
 	}
 
@@ -99,11 +92,11 @@ func (r *QuestDBSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	case "":
 		return r.handlePhaseEmpty(ctx, snap)
 	case crdv1beta1.SnapshotPending:
-		return r.handlePhasePending(ctx, snap, s)
+		return r.handlePhasePending(ctx, snap)
 	case crdv1beta1.SnapshotRunning:
 		return r.handlePhaseRunning(ctx, snap)
 	case crdv1beta1.SnapshotFinalizing:
-		return r.handlePhaseFinalizing(ctx, snap, s)
+		return r.handlePhaseFinalizing(ctx, snap)
 	case crdv1beta1.SnapshotFailed:
 		return r.handlePhaseFailed(ctx, snap)
 	case crdv1beta1.SnapshotSucceeded:
@@ -122,20 +115,27 @@ func (r *QuestDBSnapshotReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *QuestDBSnapshotReconciler) buildPreSnapshotJob(snap *crdv1beta1.QuestDBSnapshot, s secrets.QuestDBSecrets) (batchv1.Job, error) {
-	return r.buildGenericSnapshotJob(snap, s, "pre-snapshot", "SNAPSHOT PREPARE;")
+func (r *QuestDBSnapshotReconciler) buildPreSnapshotJob(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (batchv1.Job, error) {
+	return r.buildGenericSnapshotJob(ctx, snap, "pre-snapshot", "SNAPSHOT PREPARE;")
 }
 
-func (r *QuestDBSnapshotReconciler) buildPostSnapshotJob(snap *crdv1beta1.QuestDBSnapshot, s secrets.QuestDBSecrets) (batchv1.Job, error) {
-	return r.buildGenericSnapshotJob(snap, s, "post-snapshot", "SNAPSHOT COMPLETE;")
+func (r *QuestDBSnapshotReconciler) buildPostSnapshotJob(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (batchv1.Job, error) {
+	return r.buildGenericSnapshotJob(ctx, snap, "post-snapshot", "SNAPSHOT COMPLETE;")
 }
 
-func (r *QuestDBSnapshotReconciler) buildGenericSnapshotJob(snap *crdv1beta1.QuestDBSnapshot, s secrets.QuestDBSecrets, nameSuffix, command string) (batchv1.Job, error) {
+func (r *QuestDBSnapshotReconciler) buildGenericSnapshotJob(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot, nameSuffix, command string) (batchv1.Job, error) {
 	var (
 		err      error
 		user     = "admin"
 		password = "quest"
 	)
+
+	// Get status of any related secrets. These will be used later to add pgwire credentials
+	// to the pre- and post-snapshot jobs.
+	s, err := secrets.GetSecrets(ctx, r.Client, client.ObjectKeyFromObject(snap))
+	if err != nil {
+		return batchv1.Job{}, err
+	}
 
 	if s.PsqlSecret != nil {
 		if val, found := s.PsqlSecret.Data["QDB_PSQL_USER"]; found {
@@ -218,11 +218,8 @@ func (r *QuestDBSnapshotReconciler) buildVolumeSnapshot(snap *crdv1beta1.QuestDB
 			Source: volumesnapshotv1.VolumeSnapshotSource{
 				PersistentVolumeClaimName: pointer.String(snap.Spec.QuestDBName),
 			},
+			VolumeSnapshotClassName: snap.Spec.VolumeSnapshotClassName,
 		},
-	}
-
-	if snap.Spec.VolumeSnapshotClassName != "" {
-		volSnap.Spec.VolumeSnapshotClassName = pointer.String(snap.Spec.VolumeSnapshotClassName)
 	}
 
 	err = ctrl.SetControllerReference(snap, &volSnap, r.Scheme)
@@ -231,7 +228,7 @@ func (r *QuestDBSnapshotReconciler) buildVolumeSnapshot(snap *crdv1beta1.QuestDB
 }
 
 // handleFinalizer is guaranteed to run before any other reconciliation logic
-func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot, s secrets.QuestDBSecrets) (ctrl.Result, error) {
+func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
 	var err error
 
 	if snap.DeletionTimestamp.IsZero() {
@@ -269,7 +266,8 @@ func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *c
 						return ctrl.Result{}, err
 					}
 					r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotFinalizing", "Running 'SNAPSHOT COMPLETE;' for snapshot %s", snap.Name)
-					return r.handlePhaseFinalizing(ctx, snap, s)
+
+					return r.handlePhaseFinalizing(ctx, snap)
 				}
 
 				// If the job is active, we need to wait until it is not
@@ -359,7 +357,7 @@ func (r *QuestDBSnapshotReconciler) handlePhaseEmpty(ctx context.Context, snap *
 	return ctrl.Result{}, nil
 }
 
-func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot, s secrets.QuestDBSecrets) (ctrl.Result, error) {
+func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
 
 	// Add the snapshot protection finalizer to the questdb
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -367,6 +365,12 @@ func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap
 		questdb := &crdv1beta1.QuestDB{}
 		err := r.Get(ctx, client.ObjectKey{Name: snap.Spec.QuestDBName, Namespace: snap.Namespace}, questdb)
 		if err != nil {
+			// Fail the snapshot if the questdb is not found
+			if apierrors.IsNotFound(err) {
+				snap.Status.Phase = crdv1beta1.SnapshotFailed
+				err = r.Status().Update(ctx, snap)
+				r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotFailed", "QuestDB %s not found", snap.Spec.QuestDBName)
+			}
 			return err
 		}
 		if !controllerutil.ContainsFinalizer(questdb, crdv1beta1.QuestDBSnapshotProtectionFinalizer) {
@@ -380,7 +384,7 @@ func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap
 	}
 
 	// Create the pre-snapshot job
-	job, err := r.buildPreSnapshotJob(snap, s)
+	job, err := r.buildPreSnapshotJob(ctx, snap)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -414,6 +418,21 @@ func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap
 }
 
 func (r *QuestDBSnapshotReconciler) handlePhaseRunning(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
+	// Check that the volume snapshot class exists
+	if snap.Spec.VolumeSnapshotClassName != nil {
+		volSnapClass := &volumesnapshotv1.VolumeSnapshotClass{}
+		err := r.Get(ctx, client.ObjectKey{Name: *snap.Spec.VolumeSnapshotClassName}, volSnapClass)
+		if err != nil {
+			// If the volume snapshot class does not exist, fail the snapshot
+			if apierrors.IsNotFound(err) {
+				snap.Status.Phase = crdv1beta1.SnapshotFailed
+				err = r.Status().Update(ctx, snap)
+				r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotFailed", "VolumeSnapshotClass %s not found", *snap.Spec.VolumeSnapshotClassName)
+			}
+			return ctrl.Result{}, err
+		}
+	}
+
 	// Create the volume snapshot
 	volumeSnap, err := r.buildVolumeSnapshot(snap)
 	if err != nil {
@@ -443,10 +462,10 @@ func (r *QuestDBSnapshotReconciler) handlePhaseRunning(ctx context.Context, snap
 
 }
 
-func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot, s secrets.QuestDBSecrets) (ctrl.Result, error) {
+func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
 
 	// Create the pre-snapshot job
-	job, err := r.buildPostSnapshotJob(snap, s)
+	job, err := r.buildPostSnapshotJob(ctx, snap)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
