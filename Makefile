@@ -114,14 +114,14 @@ download-test-crds:
 	fi
 
 .PHONY: test
-test: download-test-crds manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./api/... ./internal/... -coverprofile cover.out && go tool cover -func=cover.out
+test: ginkgo download-test-crds manifests generate fmt vet envtest ## Run tests.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GINKGO) ./api/... ./internal/... -coverprofile cover.out && go tool cover -func=cover.out
 
 .PHONY: integration-test
 integration-test: ginkgo kind-clean kind-deploy
 	echo "Waiting for operator to be ready..."
 	sleep 10
-	$(GINKGO) ./tests/integration --slow-spec-threshold 2>&1 || true
+	$(GINKGO) ./tests/integration 2>&1 || true
 
 
 ##@ Build
@@ -203,7 +203,7 @@ KIND ?= $(LOCALBIN)/kind
 KUSTOMIZE_VERSION ?= v4.5.7
 CONTROLLER_TOOLS_VERSION ?= v0.11.1
 KIND_VERSION ?= v0.17.0
-GINKGO_VERSION ?= v2.1.4
+GINKGO_VERSION ?= v2.11.0
 
 ## Test CRD Directories
 TEST_CRD_DIR ?= tests/crd/external-snapshotter
