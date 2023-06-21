@@ -208,6 +208,7 @@ func (r *QuestDBSnapshotScheduleReconciler) getChildSnapshots(ctx context.Contex
 	return ownedList, nil
 }
 
+// garbageCollect assumes that snapshots are ordered descending by creation timestamp
 func (r *QuestDBSnapshotScheduleReconciler) garbageCollect(ctx context.Context, s *crdv1beta1.QuestDBSnapshotList, retention int32) error {
 	var (
 		err          error

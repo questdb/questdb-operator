@@ -275,23 +275,21 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			})
 			Expect(err).ToNot(HaveOccurred())
 
-			// Fail the snapshot by brute-force iterating over all available snapshots,
-			// since we can't guarantee ordering (I think...)
-			snapList := &crdv1beta1.QuestDBSnapshotList{}
-			err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-				Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
-				for _, snap := range snapList.Items {
-					if snap.Status.Phase != crdv1beta1.SnapshotFailed {
-						snap.Status.Phase = crdv1beta1.SnapshotFailed
-						err = k8sClient.Status().Update(ctx, &snap)
-						if err != nil {
-							return err
-						}
-					}
+			// Wait for the snapshot status to hit pending, then fail it
+			expectedSnapshotName := sched.Name + "-" + r.TimeSource.Now().Format("20060102150405")
+			Eventually(func(g Gomega) {
+				snap := &crdv1beta1.QuestDBSnapshot{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      expectedSnapshotName,
+						Namespace: sched.Namespace,
+					},
 				}
-				return nil
-			})
-			Expect(err).ToNot(HaveOccurred())
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(snap), snap)).To(Succeed())
+				g.Expect(snap.Status.Phase).To(Equal(crdv1beta1.SnapshotPending))
+
+				snap.Status.Phase = crdv1beta1.SnapshotFailed
+				g.Expect(k8sClient.Status().Update(ctx, snap)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
 		}
 
 		By("Check that all snapshots are still there")
