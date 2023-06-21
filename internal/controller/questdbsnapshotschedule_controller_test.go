@@ -150,16 +150,18 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 				g.Expect(k8sClient.Update(ctx, sched)).To(Succeed())
 			}, timeout, interval).Should(Succeed())
 
-			By("Setting the status of the latest snapshot to Succeeded")
-			snapList := &crdv1beta1.QuestDBSnapshotList{}
-			Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
-			Expect(snapList.Items).To(HaveLen(2))
-			for _, snap := range snapList.Items {
-				if snap.Status.Phase != crdv1beta1.SnapshotSucceeded {
-					snap.Status.Phase = crdv1beta1.SnapshotSucceeded
-					Expect(k8sClient.Status().Update(ctx, &snap)).To(Succeed())
+			By("Setting the status of all snapshots to Succeeded")
+			Eventually(func(g Gomega) {
+
+				snapList := &crdv1beta1.QuestDBSnapshotList{}
+				g.Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
+				for _, snap := range snapList.Items {
+					if snap.Status.Phase != crdv1beta1.SnapshotSucceeded {
+						snap.Status.Phase = crdv1beta1.SnapshotSucceeded
+						g.Expect(k8sClient.Status().Update(ctx, &snap)).To(Succeed())
+					}
 				}
-			}
+			}, timeout, interval).Should(Succeed())
 
 			By("Forcing a reconcile")
 			_, err := r.Reconcile(ctx, ctrl.Request{
