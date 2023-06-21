@@ -5,12 +5,14 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 	testutils "github.com/questdb/questdb-operator/tests/utils"
 	"github.com/thejerf/abtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -175,6 +177,157 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 				g.Expect(snapList.Items).To(HaveLen(1))
 			}, timeout, interval).Should(Succeed())
 		})
+
+	})
+
+	It("should only report the status of snapshots owned by it", func() {
+		r = &QuestDBSnapshotScheduleReconciler{
+			Client:     k8sClient,
+			Scheme:     scheme.Scheme,
+			Recorder:   record.NewFakeRecorder(100),
+			TimeSource: abtime.NewManual(),
+		}
+
+		By("Creating a QuestDB")
+		q = testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
+
+		By("Creating a QuestDBSnapshotSchedule")
+		sched = &crdv1beta1.QuestDBSnapshotSchedule{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      q.Name,
+				Namespace: q.Namespace,
+			},
+			Spec: crdv1beta1.QuestDBSnapshotScheduleSpec{
+				Snapshot: crdv1beta1.QuestDBSnapshotSpec{
+					QuestDBName:             q.Name,
+					VolumeSnapshotClassName: pointer.String("csi-hostpath-snapclass"),
+				},
+				Schedule: "*/1 * * * *",
+			},
+		}
+		Expect(k8sClient.Create(ctx, sched)).To(Succeed())
+
+		By("Creating a one-off snapshot")
+		snap := &crdv1beta1.QuestDBSnapshot{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "one-off-snap",
+				Namespace: q.Namespace,
+			},
+			Spec: crdv1beta1.QuestDBSnapshotSpec{
+				QuestDBName: q.Name,
+			},
+		}
+		Expect(k8sClient.Create(ctx, snap)).To(Succeed())
+
+		By("Forcing a reconcile")
+		_, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: client.ObjectKeyFromObject(sched),
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Ensuring that the status of the one-off snapshot is not reported")
+		Eventually(func(g Gomega) {
+			// Ensure that the one-off snapshot is pending
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(snap), snap)).To(Succeed())
+			g.Expect(snap.Status.Phase).To(Equal(crdv1beta1.SnapshotPending))
+		}, timeout, interval).Should(Succeed())
+
+		// Now ensure that the schedule status has not updated
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sched), sched)).To(Succeed())
+		Expect(sched.Status.SnapshotPhase).To(Equal(crdv1beta1.QuestDBSnapshotPhase("")))
+	})
+
+	It("Should only garbage collect succeeded snapshots", func() {
+		var retention int32 = 5
+
+		r = &QuestDBSnapshotScheduleReconciler{
+			Client:     k8sClient,
+			Scheme:     scheme.Scheme,
+			Recorder:   record.NewFakeRecorder(100),
+			TimeSource: abtime.NewManual(),
+		}
+
+		By("Creating a QuestDB")
+		q = testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
+
+		By("Creating a QuestDBSnapshotSchedule")
+		sched = &crdv1beta1.QuestDBSnapshotSchedule{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      q.Name,
+				Namespace: q.Namespace,
+			},
+			Spec: crdv1beta1.QuestDBSnapshotScheduleSpec{
+				Snapshot: crdv1beta1.QuestDBSnapshotSpec{
+					QuestDBName:             q.Name,
+					VolumeSnapshotClassName: pointer.String("csi-hostpath-snapclass"),
+				},
+				Schedule:  "*/1 * * * *",
+				Retention: retention,
+			},
+		}
+		Expect(k8sClient.Create(ctx, sched)).To(Succeed())
+
+		By("Advancing time enough to create retention * 2 snapshots and failing them all")
+		for i := int32(0); i < retention*2; i++ {
+			r.TimeSource.(*abtime.ManualTime).Advance(time.Minute)
+			_, err := r.Reconcile(ctx, ctrl.Request{
+				NamespacedName: client.ObjectKeyFromObject(sched),
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			// Fail the snapshot by brute-force iterating over all available snapshots,
+			// since we can't guarantee ordering (I think...)
+			snapList := &crdv1beta1.QuestDBSnapshotList{}
+			err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+				Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
+				for _, snap := range snapList.Items {
+					if snap.Status.Phase != crdv1beta1.SnapshotFailed {
+						snap.Status.Phase = crdv1beta1.SnapshotFailed
+						err = k8sClient.Status().Update(ctx, &snap)
+						if err != nil {
+							return err
+						}
+					}
+				}
+				return nil
+			})
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		By("Check that all snapshots are still there")
+		snapList := &crdv1beta1.QuestDBSnapshotList{}
+		Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
+		Expect(snapList.Items).To(HaveLen(int(retention * 2)))
+
+		By("Set retention + 1 snapshots to succeeded and see the list shrink by 1")
+		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			var err error
+			Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
+			for i, snap := range snapList.Items {
+				if i < int(retention+1) {
+					snap.Status.Phase = crdv1beta1.SnapshotSucceeded
+					err = k8sClient.Status().Update(ctx, &snap)
+					if err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Advancing time a small amount to not trigger another snapshot creation")
+		r.TimeSource.(*abtime.ManualTime).Advance(time.Second)
+
+		By("Forcing a reconcile")
+		_, err = r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: client.ObjectKeyFromObject(sched),
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Checking that the list has shrunk by 1")
+		Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
+		Expect(snapList.Items).To(HaveLen(int(retention*2 - 1)))
 
 	})
 

@@ -56,11 +56,12 @@ type QuestDBSnapshotScheduleReconciler struct {
 // move the current state of the cluster closer to the desired state.
 func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var (
-		err error
+		err        error
+		latestSnap *crdv1beta1.QuestDBSnapshot
 
-		sched      = &crdv1beta1.QuestDBSnapshotSchedule{}
-		latestSnap = &crdv1beta1.QuestDBSnapshot{}
-		_          = log.FromContext(ctx)
+		sched          = &crdv1beta1.QuestDBSnapshotSchedule{}
+		childSnapshots = &crdv1beta1.QuestDBSnapshotList{}
+		_              = log.FromContext(ctx)
 	)
 
 	// Try to get the object we are reconciling.  Exit if it does not exist
@@ -76,9 +77,21 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 		}
 	}
 
-	// Get the latest snapshot, if it exists
-	if latestSnap, err = r.getLatest(ctx, sched); err != nil {
+	// Get child snapshots
+	if childSnapshots, err = r.getChildSnapshots(ctx, sched); err != nil {
 		return ctrl.Result{}, err
+	}
+
+	// Since snapshots are sorted in descending order, the latest snapshot is the first item
+	if len(childSnapshots.Items) > 0 {
+		// Garbage collect old snapshots
+		if err = r.garbageCollect(ctx, childSnapshots, sched.Spec.Retention); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		if len(childSnapshots.Items) > 0 {
+			latestSnap = &childSnapshots.Items[0]
+		}
 	}
 
 	// Update the snapshot phase status based on the latest snapshot
@@ -111,8 +124,8 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 			return ctrl.Result{}, err
 		}
 
-		// Skip taking a snapshot if the latest snapshot is not complete
-		if latestSnap != nil && latestSnap.Status.Phase != crdv1beta1.SnapshotSucceeded {
+		// Skip taking a snapshot if the latest snapshot is not complete (succeeded or failed or empty phase)
+		if latestSnap != nil && latestSnap.Status.Phase != crdv1beta1.SnapshotSucceeded && latestSnap.Status.Phase != crdv1beta1.SnapshotFailed {
 			r.Recorder.Event(sched, "Warning", "SnapshotSkipped", fmt.Sprintf("Skipping snapshot because the latest snapshot is not complete: %s", latestSnap.Name))
 			return ctrl.Result{}, nil
 		}
@@ -169,36 +182,57 @@ func (r *QuestDBSnapshotScheduleReconciler) buildSnapshot(sched *crdv1beta1.Ques
 
 }
 
-func (r *QuestDBSnapshotScheduleReconciler) getLatest(ctx context.Context, sched *crdv1beta1.QuestDBSnapshotSchedule) (*crdv1beta1.QuestDBSnapshot, error) {
+func (r *QuestDBSnapshotScheduleReconciler) getChildSnapshots(ctx context.Context, sched *crdv1beta1.QuestDBSnapshotSchedule) (*crdv1beta1.QuestDBSnapshotList, error) {
 	var (
 		err error
 
-		snapList = &crdv1beta1.QuestDBSnapshotList{}
+		snapList  = &crdv1beta1.QuestDBSnapshotList{}
+		ownedList = &crdv1beta1.QuestDBSnapshotList{}
 	)
 
 	if err = r.List(ctx, snapList, client.InNamespace(sched.Namespace)); err != nil {
 		return nil, err
 	}
 
-	// Sort in descending order so we can garbage collect
+	// Sort in descending order
 	sort.Slice(snapList.Items, func(i, j int) bool {
 		return !snapList.Items[i].CreationTimestamp.Before(&snapList.Items[j].CreationTimestamp)
 	})
 
-	if len(snapList.Items) == 0 {
-		return nil, nil
-	}
-
-	for idx, s := range snapList.Items {
-		if idx >= int(sched.Spec.Retention) {
-			if err = r.Delete(ctx, &s); err != nil {
-				return nil, err
-			}
-			r.Recorder.Event(sched, "Normal", "SnapshotDeleted", fmt.Sprintf("Deleted snapshot: %s", s.Name))
+	for _, s := range snapList.Items {
+		if metav1.IsControlledBy(&s, sched) {
+			ownedList.Items = append(ownedList.Items, s)
 		}
 	}
 
-	return &snapList.Items[0], nil
+	return ownedList, nil
+}
+
+func (r *QuestDBSnapshotScheduleReconciler) garbageCollect(ctx context.Context, s *crdv1beta1.QuestDBSnapshotList, retention int32) error {
+	var (
+		err          error
+		successCount int32
+	)
+
+	if len(s.Items) == 0 {
+		return nil
+	}
+
+	for _, snap := range s.Items {
+		if snap.Status.Phase == crdv1beta1.SnapshotSucceeded {
+			successCount++
+		}
+
+		// Delete snapshots that are older than the retention
+		if successCount >= retention && snap.Status.Phase == crdv1beta1.SnapshotSucceeded {
+			if err = r.Delete(ctx, &snap); err != nil {
+				return err
+			}
+			r.Recorder.Event(s, "Normal", "SnapshotDeleted", fmt.Sprintf("Deleted snapshot: %s", snap.Name))
+		}
+	}
+
+	return nil
 
 }
 
