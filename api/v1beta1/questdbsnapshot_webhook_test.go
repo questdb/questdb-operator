@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/pointer"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -39,7 +40,7 @@ var _ = Describe("QuestDBSnapshot Webhook", func() {
 			},
 			Spec: QuestDBSnapshotSpec{
 				QuestDBName:             q.Name,
-				VolumeSnapshotClassName: "csi-hostpath-snapclass",
+				VolumeSnapshotClassName: pointer.String("csi-hostpath-snapclass"),
 			},
 		}
 	})
@@ -56,8 +57,13 @@ var _ = Describe("QuestDBSnapshot Webhook", func() {
 		})
 
 		It("should reject empty volume snapshot class names", func() {
-			snap.Spec.VolumeSnapshotClassName = ""
+			snap.Spec.VolumeSnapshotClassName = pointer.String("")
 			Expect(k8sClient.Create(ctx, snap)).ToNot(Succeed())
+		})
+
+		It("should accept nil volume snapshot class names", func() {
+			snap.Spec.VolumeSnapshotClassName = nil
+			Expect(k8sClient.Create(ctx, snap)).To(Succeed())
 		})
 
 	})
@@ -72,7 +78,14 @@ var _ = Describe("QuestDBSnapshot Webhook", func() {
 
 		It("should reject updates to volume snapshot class names", func() {
 			Expect(k8sClient.Create(ctx, snap)).To(Succeed())
-			snap.Spec.VolumeSnapshotClassName = "foo"
+			snap.Spec.VolumeSnapshotClassName = pointer.String("foo")
+			Expect(k8sClient.Update(ctx, snap)).ToNot(Succeed())
+		})
+
+		It("should reject nil-to-value changes to volume snapshot class names", func() {
+			snap.Spec.VolumeSnapshotClassName = nil
+			Expect(k8sClient.Create(ctx, snap)).To(Succeed())
+			snap.Spec.VolumeSnapshotClassName = pointer.String("foo")
 			Expect(k8sClient.Update(ctx, snap)).ToNot(Succeed())
 		})
 
@@ -81,6 +94,13 @@ var _ = Describe("QuestDBSnapshot Webhook", func() {
 			snap.Spec.JobBackoffLimit = 500
 			Expect(k8sClient.Update(ctx, snap)).ToNot(Succeed())
 		})
+
+		It("should accept updates if nothing has changed and volume snapshot class name is nil", func() {
+			snap.Spec.VolumeSnapshotClassName = nil
+			Expect(k8sClient.Create(ctx, snap)).To(Succeed())
+			Expect(k8sClient.Update(ctx, snap)).To(Succeed())
+		})
+
 	})
 
 })

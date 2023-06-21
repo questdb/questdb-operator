@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/pointer"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -40,7 +41,7 @@ var _ = Describe("QuestDBSnapshotSchedule Webhook", func() {
 			Spec: QuestDBSnapshotScheduleSpec{
 				Snapshot: QuestDBSnapshotSpec{
 					QuestDBName:             q.Name,
-					VolumeSnapshotClassName: "csi-hostpath-snapclass",
+					VolumeSnapshotClassName: pointer.String("csi-hostpath-snapclass"),
 				},
 				Schedule: "*/1 * * * *",
 			},
@@ -65,7 +66,7 @@ var _ = Describe("QuestDBSnapshotSchedule Webhook", func() {
 		})
 
 		It("should reject empty volume snapshot class names", func() {
-			sched.Spec.Snapshot.VolumeSnapshotClassName = ""
+			sched.Spec.Snapshot.VolumeSnapshotClassName = pointer.String("")
 			Expect(k8sClient.Create(ctx, sched)).ToNot(Succeed())
 		})
 
@@ -87,7 +88,7 @@ var _ = Describe("QuestDBSnapshotSchedule Webhook", func() {
 
 		It("should reject updates to volume snapshot class names", func() {
 			Expect(k8sClient.Create(ctx, sched)).To(Succeed())
-			sched.Spec.Snapshot.VolumeSnapshotClassName = "foo"
+			sched.Spec.Snapshot.VolumeSnapshotClassName = pointer.String("foo")
 			Expect(k8sClient.Update(ctx, sched)).ToNot(Succeed())
 		})
 
