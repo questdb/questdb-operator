@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,7 +36,10 @@ import (
 
 	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
+
 	//+kubebuilder:scaffold:imports
+
+	testutils "github.com/questdb/questdb-operator/tests/utils"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -108,6 +112,16 @@ var _ = BeforeSuite(func() {
 	// Note: since we cannot mock the manager's time source, we will instantiate
 	// a new QuestDBSnapshotScheduleReconciler with a mock time source and call
 	// Reconcile directly.
+
+	// Create a mock volumesnapshotclass
+	snapClass := &volumesnapshotv1.VolumeSnapshotClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testutils.SnapshotClassName,
+		},
+		Driver:         testutils.StorageClassName,
+		DeletionPolicy: volumesnapshotv1.VolumeSnapshotContentDelete,
+	}
+	Expect(k8sClient.Create(ctx, snapClass)).To(Succeed())
 
 	// Start the manager
 	go func() {

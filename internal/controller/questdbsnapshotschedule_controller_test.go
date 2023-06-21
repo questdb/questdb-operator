@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -54,7 +55,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 				Spec: crdv1beta1.QuestDBSnapshotScheduleSpec{
 					Snapshot: crdv1beta1.QuestDBSnapshotSpec{
 						QuestDBName:             q.Name,
-						VolumeSnapshotClassName: "csi-hostpath-snapclass",
+						VolumeSnapshotClassName: pointer.String("csi-hostpath-snapclass"),
 					},
 					Schedule: "*/1 * * * *",
 				},

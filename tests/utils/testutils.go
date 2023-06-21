@@ -63,9 +63,8 @@ func BuildAndCreateMockQuestDB(ctx context.Context, c client.Client) *crdv1beta1
 	return q
 }
 
-func BuildAndCreateMockQuestDBSnapshot(ctx context.Context, c client.Client, q *crdv1beta1.QuestDB) *crdv1beta1.QuestDBSnapshot {
-	By("Creating a QuestDBSnapshot")
-	snap := &crdv1beta1.QuestDBSnapshot{
+func BuildMockQuestDBSnapshot(ctx context.Context, c client.Client, q *crdv1beta1.QuestDB) *crdv1beta1.QuestDBSnapshot {
+	return &crdv1beta1.QuestDBSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-%s", q.Name, time.Now().Format("20060102150405")),
 			Namespace: q.Namespace,
@@ -73,13 +72,16 @@ func BuildAndCreateMockQuestDBSnapshot(ctx context.Context, c client.Client, q *
 		},
 		Spec: crdv1beta1.QuestDBSnapshotSpec{
 			QuestDBName:             q.Name,
-			VolumeSnapshotClassName: SnapshotClassName,
+			VolumeSnapshotClassName: pointer.String(SnapshotClassName),
 			JobBackoffLimit:         5,
 		},
 	}
+}
 
+func BuildAndCreateMockQuestDBSnapshot(ctx context.Context, c client.Client, q *crdv1beta1.QuestDB) *crdv1beta1.QuestDBSnapshot {
+	By("Creating a QuestDBSnapshot")
+	snap := BuildMockQuestDBSnapshot(ctx, c, q)
 	Expect(c.Create(ctx, snap)).To(Succeed())
-
 	return snap
 }
 
@@ -95,7 +97,7 @@ func BuildAndCreateMockVolumeSnapshot(ctx context.Context, c client.Client, snap
 			Source: volumesnapshotv1.VolumeSnapshotSource{
 				PersistentVolumeClaimName: pointer.String(snap.Spec.QuestDBName),
 			},
-			VolumeSnapshotClassName: pointer.String(snap.Spec.VolumeSnapshotClassName),
+			VolumeSnapshotClassName: snap.Spec.VolumeSnapshotClassName,
 		},
 	}
 
@@ -116,7 +118,7 @@ func BuildAndCreateMockQuestDBSnapshotSchedule(ctx context.Context, c client.Cli
 		Spec: crdv1beta1.QuestDBSnapshotScheduleSpec{
 			Snapshot: crdv1beta1.QuestDBSnapshotSpec{
 				QuestDBName:             q.Name,
-				VolumeSnapshotClassName: SnapshotClassName,
+				VolumeSnapshotClassName: pointer.String(SnapshotClassName),
 			},
 			Schedule: "*/1 * * * *",
 		},

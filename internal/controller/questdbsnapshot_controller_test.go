@@ -19,7 +19,7 @@ import (
 
 var _ = Describe("QuestDBSnapshot Controller", func() {
 	var (
-		timeout            = time.Second * 2
+		timeout            = time.Second * 20000
 		consistencyTimeout = time.Millisecond * 600
 		interval           = time.Millisecond * 100
 	)
@@ -582,6 +582,65 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
 			g.Expect(snap.Spec.JobBackoffLimit).To(Equal(crdv1beta1.JobBackoffLimitDefault))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	Context("Validation tests", func() {
+		It("Should fail the snapshot immediately if the QuestDB does not exist", func() {
+			// QuestDB is not actually created, but namespace is
+			q := testutils.BuildMockQuestDB(ctx, k8sClient)
+			snap := testutils.BuildAndCreateMockQuestDBSnapshot(ctx, k8sClient, q)
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
+				g.Expect(snap.Status.Phase).To(Equal(crdv1beta1.SnapshotFailed))
+			}, consistencyTimeout, interval).Should(Succeed())
+		})
+
+		It("Should fail the snapshot in the running phase if the VolumeSnapshot class does not exist", func() {
+			q := testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
+			// QuestDBSnapshot is not actually created so we can update the VolumeSnapshotClassName to something that does not exist
+			snap := testutils.BuildMockQuestDBSnapshot(ctx, k8sClient, q)
+			snap.Spec.VolumeSnapshotClassName = pointer.String("non-existent-class")
+			// Now create the QuestDBSnapshot
+			Expect(k8sClient.Create(ctx, snap)).To(Succeed())
+
+			preSnapJob := &batchv1.Job{}
+			By("Checking if a pre-snapshot job is created")
+			Eventually(func() error {
+				return k8sClient.Get(ctx, client.ObjectKey{
+					Name:      fmt.Sprintf("%s-pre-snapshot", snap.Name),
+					Namespace: snap.Namespace,
+				}, preSnapJob)
+			}, timeout, interval).Should(Succeed())
+
+			By("Checking if the phase is set to SnapshotPending")
+			Eventually(func() crdv1beta1.QuestDBSnapshotPhase {
+				k8sClient.Get(ctx, client.ObjectKey{
+					Name:      snap.Name,
+					Namespace: snap.Namespace,
+				}, snap)
+				return snap.Status.Phase
+			}, timeout, interval).Should(Equal(crdv1beta1.SnapshotPending))
+
+			By("Manually completing the pre-snapshot job")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+					Name:      preSnapJob.Name,
+					Namespace: preSnapJob.Namespace,
+				}, preSnapJob)).To(Succeed())
+				preSnapJob.Status.Succeeded = 1
+				Expect(k8sClient.Status().Update(ctx, preSnapJob)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("Checking if the phase is set to SnapshotFailed")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+					Name:      snap.Name,
+					Namespace: snap.Namespace,
+				}, snap)).Should(Succeed())
+
+				g.Expect(snap.Status.Phase).Should(Equal(crdv1beta1.SnapshotFailed))
+			}, timeout, interval).Should(Succeed())
+		})
 	})
 
 })

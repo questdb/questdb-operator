@@ -64,7 +64,6 @@ spec:
                     type: string
                 required:
                 - questdbName
-                - volumeSnapshotClassName
                 type: object
             required:
             - retention

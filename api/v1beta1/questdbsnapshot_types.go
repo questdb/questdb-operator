@@ -41,9 +41,9 @@ const (
 
 // QuestDBSnapshotSpec defines the desired state of QuestDBSnapshot
 type QuestDBSnapshotSpec struct {
-	QuestDBName             string `json:"questdbName"`
-	VolumeSnapshotClassName string `json:"volumeSnapshotClassName"`
-	JobBackoffLimit         int32  `json:"jobBackoffLimit,omitempty"`
+	QuestDBName             string  `json:"questdbName"`
+	VolumeSnapshotClassName *string `json:"volumeSnapshotClassName,omitempty"`
+	JobBackoffLimit         int32   `json:"jobBackoffLimit,omitempty"`
 }
 
 // QuestDBSnapshotStatus defines the observed state of QuestDBSnapshot

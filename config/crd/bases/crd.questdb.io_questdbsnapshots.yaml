@@ -54,7 +54,6 @@ spec:
                 type: string
             required:
             - questdbName
-            - volumeSnapshotClassName
             type: object
           status:
             description: QuestDBSnapshotStatus defines the observed state of QuestDBSnapshot
