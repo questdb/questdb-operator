@@ -302,6 +302,14 @@ func (r *QuestDBReconciler) reconcileStatefulSet(ctx context.Context, q *crdv1be
 		r.Recorder.Event(q, v1.EventTypeNormal, "StatefulSetUpdated", "StatefulSet updated")
 	}
 
+	// Update the StatefulSetPodsReady status
+	if actual.Status.ReadyReplicas != int32(q.Status.StatefulSetReadyReplicas) {
+		q.Status.StatefulSetReadyReplicas = int(actual.Status.ReadyReplicas)
+		if err = r.Status().Update(ctx, q); err != nil {
+			return err
+		}
+	}
+
 	return nil
 
 }
