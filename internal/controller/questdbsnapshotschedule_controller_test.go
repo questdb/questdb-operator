@@ -107,12 +107,15 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 
 			latestSnap := &snapList.Items[0]
 
-			By("Setting the phase to Succeeded")
+			By("Waiting for the snapshot to become pending")
 			Eventually(func(g Gomega) {
 				k8sClient.Get(ctx, client.ObjectKeyFromObject(latestSnap), latestSnap)
-				latestSnap.Status.Phase = crdv1beta1.SnapshotSucceeded
-				g.Expect(k8sClient.Status().Update(ctx, latestSnap)).To(Succeed())
+				g.Expect(latestSnap.Status.Phase).To(Equal(crdv1beta1.SnapshotPending))
 			}, timeout, interval).Should(Succeed())
+
+			By("Setting the snapshot to succeeded")
+			latestSnap.Status.Phase = crdv1beta1.SnapshotSucceeded
+			Expect(k8sClient.Status().Update(ctx, latestSnap)).To(Succeed())
 
 			By("Forcing a reconcile")
 			_, err := r.Reconcile(ctx, ctrl.Request{
@@ -145,6 +148,18 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		})
 
 		It("should delete the snapshot if the retention policy is set to 1", func() {
+			By("Waiting for the snapshot to become pending")
+			latestSnap := &crdv1beta1.QuestDBSnapshot{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      sched.Name + "-" + timeSource.Now().Format("20060102150405"),
+					Namespace: sched.Namespace,
+				},
+			}
+			Eventually(func(g Gomega) {
+				k8sClient.Get(ctx, client.ObjectKeyFromObject(latestSnap), latestSnap)
+				g.Expect(latestSnap.Status.Phase).To(Equal(crdv1beta1.SnapshotPending))
+			}, timeout, interval).Should(Succeed())
+
 			By("Setting the retention policy to 1")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sched), sched)).To(Succeed())
@@ -152,19 +167,9 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 				g.Expect(k8sClient.Update(ctx, sched)).To(Succeed())
 			}, timeout, interval).Should(Succeed())
 
-			By("Setting the status of all snapshots to Succeeded")
-			Eventually(func(g Gomega) {
-
-				snapList := &crdv1beta1.QuestDBSnapshotList{}
-				g.Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
-				for _, snap := range snapList.Items {
-					// The snapshot should be eventually set to pending by the running controller
-					if snap.Status.Phase == crdv1beta1.SnapshotPending {
-						snap.Status.Phase = crdv1beta1.SnapshotSucceeded
-						g.Expect(k8sClient.Status().Update(ctx, &snap)).To(Succeed())
-					}
-				}
-			}, timeout, interval).Should(Succeed())
+			By("Setting the snapshot to succeeded")
+			latestSnap.Status.Phase = crdv1beta1.SnapshotSucceeded
+			Expect(k8sClient.Status().Update(ctx, latestSnap)).To(Succeed())
 
 			By("Forcing a reconcile")
 			_, err := r.Reconcile(ctx, ctrl.Request{
