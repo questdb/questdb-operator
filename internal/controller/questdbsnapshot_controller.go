@@ -359,6 +359,21 @@ func (r *QuestDBSnapshotReconciler) handlePhaseEmpty(ctx context.Context, snap *
 
 func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
 
+	// Check that the volume snapshot class exists
+	if snap.Spec.VolumeSnapshotClassName != nil {
+		volSnapClass := &volumesnapshotv1.VolumeSnapshotClass{}
+		err := r.Get(ctx, client.ObjectKey{Name: *snap.Spec.VolumeSnapshotClassName}, volSnapClass)
+		if err != nil {
+			// If the volume snapshot class does not exist, finalize and then fail the snapshot
+			if apierrors.IsNotFound(err) {
+				snap.Status.Phase = crdv1beta1.SnapshotFailed
+				err = r.Status().Update(ctx, snap)
+				r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotFailed", "VolumeSnapshotClass %s not found", *snap.Spec.VolumeSnapshotClassName)
+			}
+			return ctrl.Result{}, err
+		}
+	}
+
 	// Add the snapshot protection finalizer to the questdb
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 
@@ -418,20 +433,6 @@ func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap
 }
 
 func (r *QuestDBSnapshotReconciler) handlePhaseRunning(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
-	// Check that the volume snapshot class exists
-	if snap.Spec.VolumeSnapshotClassName != nil {
-		volSnapClass := &volumesnapshotv1.VolumeSnapshotClass{}
-		err := r.Get(ctx, client.ObjectKey{Name: *snap.Spec.VolumeSnapshotClassName}, volSnapClass)
-		if err != nil {
-			// If the volume snapshot class does not exist, fail the snapshot
-			if apierrors.IsNotFound(err) {
-				snap.Status.Phase = crdv1beta1.SnapshotFailed
-				err = r.Status().Update(ctx, snap)
-				r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotFailed", "VolumeSnapshotClass %s not found", *snap.Spec.VolumeSnapshotClassName)
-			}
-			return ctrl.Result{}, err
-		}
-	}
 
 	// Create the volume snapshot
 	volumeSnap, err := r.buildVolumeSnapshot(snap)

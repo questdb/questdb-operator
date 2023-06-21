@@ -603,34 +603,6 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 			// Now create the QuestDBSnapshot
 			Expect(k8sClient.Create(ctx, snap)).To(Succeed())
 
-			preSnapJob := &batchv1.Job{}
-			By("Checking if a pre-snapshot job is created")
-			Eventually(func() error {
-				return k8sClient.Get(ctx, client.ObjectKey{
-					Name:      fmt.Sprintf("%s-pre-snapshot", snap.Name),
-					Namespace: snap.Namespace,
-				}, preSnapJob)
-			}, timeout, interval).Should(Succeed())
-
-			By("Checking if the phase is set to SnapshotPending")
-			Eventually(func() crdv1beta1.QuestDBSnapshotPhase {
-				k8sClient.Get(ctx, client.ObjectKey{
-					Name:      snap.Name,
-					Namespace: snap.Namespace,
-				}, snap)
-				return snap.Status.Phase
-			}, timeout, interval).Should(Equal(crdv1beta1.SnapshotPending))
-
-			By("Manually completing the pre-snapshot job")
-			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
-					Name:      preSnapJob.Name,
-					Namespace: preSnapJob.Namespace,
-				}, preSnapJob)).To(Succeed())
-				preSnapJob.Status.Succeeded = 1
-				Expect(k8sClient.Status().Update(ctx, preSnapJob)).To(Succeed())
-			}, timeout, interval).Should(Succeed())
-
 			By("Checking if the phase is set to SnapshotFailed")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
