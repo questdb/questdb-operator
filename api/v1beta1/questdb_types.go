@@ -82,7 +82,7 @@ type QuestDBStatus struct {
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 //+kubebuilder:resource:shortName=qdb;qdbs
-//+kubebuilder:printcolumn:name="Ready Replicas",type=int,JSONPath=`.status.statefulSetReadyReplicas`
+//+kubebuilder:printcolumn:name="Ready Replicas",type=integer,JSONPath=`.status.statefulSetReadyReplicas`
 //+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // QuestDB is the Schema for the questdbs API

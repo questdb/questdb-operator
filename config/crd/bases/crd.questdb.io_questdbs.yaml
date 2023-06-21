@@ -21,7 +21,7 @@ spec:
   - additionalPrinterColumns:
     - jsonPath: .status.statefulSetReadyReplicas
       name: Ready Replicas
-      type: int
+      type: integer
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
