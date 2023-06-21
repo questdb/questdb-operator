@@ -23,8 +23,6 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		q     *crdv1beta1.QuestDB
 		sched *crdv1beta1.QuestDBSnapshotSchedule
 
-		timeSource *abtime.ManualTime
-
 		timeout = time.Second * 2
 		//consistencyTimeout = time.Millisecond * 600
 		interval = time.Millisecond * 100
@@ -34,7 +32,8 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 
 	Context("golden path case", Ordered, func() {
 		var (
-			snapList = &crdv1beta1.QuestDBSnapshotList{}
+			snapList   = &crdv1beta1.QuestDBSnapshotList{}
+			timeSource *abtime.ManualTime
 		)
 
 		BeforeAll(func() {
@@ -169,6 +168,9 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			By("Setting the snapshot to succeeded")
 			latestSnap.Status.Phase = crdv1beta1.SnapshotSucceeded
 			Expect(k8sClient.Status().Update(ctx, latestSnap)).To(Succeed())
+
+			By("Advancing time a few seconds")
+			timeSource.Advance(5 * time.Second)
 
 			By("Forcing a reconcile")
 			_, err := r.Reconcile(ctx, ctrl.Request{
