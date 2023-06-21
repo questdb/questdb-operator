@@ -158,7 +158,8 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 				snapList := &crdv1beta1.QuestDBSnapshotList{}
 				g.Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
 				for _, snap := range snapList.Items {
-					if snap.Status.Phase != crdv1beta1.SnapshotSucceeded {
+					// The snapshot should be eventually set to pending by the running controller
+					if snap.Status.Phase == crdv1beta1.SnapshotPending {
 						snap.Status.Phase = crdv1beta1.SnapshotSucceeded
 						g.Expect(k8sClient.Status().Update(ctx, &snap)).To(Succeed())
 					}
