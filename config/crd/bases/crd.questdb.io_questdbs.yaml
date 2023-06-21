@@ -18,14 +18,7 @@ spec:
     singular: questdb
   scope: Namespaced
   versions:
-  - additionalPrinterColumns:
-    - jsonPath: .status.statefulSetReadyReplicas
-      name: Ready Replicas
-      type: int
-    - jsonPath: .metadata.creationTimestamp
-      name: Age
-      type: date
-    name: v1beta1
+  - name: v1beta1
     schema:
       openAPIV3Schema:
         description: QuestDB is the Schema for the questdbs API
@@ -1142,8 +1135,15 @@ spec:
           status:
             description: QuestDBStatus defines the observed state of QuestDB
             properties:
-              statefulSetReadyReplicas:
-                type: integer
+              endpoints:
+                properties:
+                  http:
+                    type: string
+                  ilp:
+                    type: string
+                  psql:
+                    type: string
+                type: object
             type: object
         type: object
     served: true
