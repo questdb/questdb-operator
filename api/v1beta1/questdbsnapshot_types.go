@@ -80,3 +80,7 @@ type QuestDBSnapshotList struct {
 func init() {
 	SchemeBuilder.Register(&QuestDBSnapshot{}, &QuestDBSnapshotList{})
 }
+
+func (s QuestDBSnapshot) IsComplete() bool {
+	return s.Status.Phase == SnapshotSucceeded || s.Status.Phase == SnapshotFailed
+}
