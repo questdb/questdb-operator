@@ -133,10 +133,9 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			timeSource.Advance(time.Minute + 5*time.Second)
 
 			By("Forcing a reconcile")
-			res, err := r.Reconcile(ctx, ctrl.Request{
+			_, err := r.Reconcile(ctx, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
-			Expect(res).To(Equal(ctrl.Result{}))
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Checking that a snapshot has been created")

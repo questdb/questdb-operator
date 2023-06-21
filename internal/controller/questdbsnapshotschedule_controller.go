@@ -24,7 +24,6 @@ import (
 
 	"github.com/thejerf/abtime"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
@@ -84,11 +83,6 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 
 	// Since snapshots are sorted in descending order, the latest snapshot is the first item
 	if len(childSnapshots.Items) > 0 {
-		// Garbage collect old snapshots
-		if err = r.garbageCollect(ctx, childSnapshots, sched.Spec.Retention); err != nil {
-			return ctrl.Result{}, err
-		}
-
 		if len(childSnapshots.Items) > 0 {
 			latestSnap = &childSnapshots.Items[0]
 		}
@@ -110,47 +104,41 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 		return ctrl.Result{}, err
 	}
 
-	// Calculate the requeue time before any modifications
-	// are made to the NextSnapshot time
-	requeueTime := nextSnapshotTime.Sub(r.TimeSource.Now())
-	if requeueTime < 0 {
-		requeueTime = 0
-	}
-
-	if nextSnapshotTime.Before(r.TimeSource.Now()) {
+	if nextSnapshotTime.Compare(r.TimeSource.Now()) <= 0 {
 		// Update the next snapshot time
 		sched.Status.NextSnapshot = metav1.NewTime(nextSnapshotTime)
 		if err = r.Status().Update(ctx, sched); err != nil {
+			// If this update fails, re-reconcile immediately
 			return ctrl.Result{}, err
 		}
 
 		// Skip taking a snapshot if the latest snapshot is not complete (succeeded or failed or empty phase)
-		if latestSnap != nil && latestSnap.Status.Phase != crdv1beta1.SnapshotSucceeded && latestSnap.Status.Phase != crdv1beta1.SnapshotFailed {
+		if latestSnap != nil && !latestSnap.IsComplete() {
 			r.Recorder.Event(sched, "Warning", "SnapshotSkipped", fmt.Sprintf("Skipping snapshot because the latest snapshot is not complete: %s", latestSnap.Name))
-			return ctrl.Result{}, nil
-		}
+		} else {
+			// Otherwise, build the snapshot
+			snap := r.buildSnapshot(sched)
 
-		// Build the snapshot
-		snap := r.buildSnapshot(sched)
+			// Create the snapshot, retrying on errors to ensure its creation
+			err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				return client.IgnoreAlreadyExists(r.Create(ctx, &snap))
+			})
 
-		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			// Create the snapshot
-			if err = r.Create(ctx, &snap); err != nil {
-				if !apierrors.IsAlreadyExists(err) {
-					r.Recorder.Event(sched, "Warning", "SnapshotFailed", fmt.Sprintf("Failed to create snapshot: %s", err))
-				}
+			if err == nil {
+				r.Recorder.Event(sched, "Normal", "SnapshotCreated", fmt.Sprintf("Created snapshot: %s", snap.Name))
+
+				// Add the new snapshot to the top of the child snapshot list
+				childSnapshots.Items = append([]crdv1beta1.QuestDBSnapshot{snap}, childSnapshots.Items...)
+			} else {
+				r.Recorder.Event(sched, "Warning", "SnapshotFailed", fmt.Sprintf("Failed to create snapshot: %s", err))
 			}
-
-			return err
-		})
-
-		if err == nil {
-			r.Recorder.Event(sched, "Normal", "SnapshotCreated", fmt.Sprintf("Created snapshot: %s", snap.Name))
 		}
-
 	}
 
-	return ctrl.Result{RequeueAfter: requeueTime}, client.IgnoreAlreadyExists(err)
+	// Garbage collect old successful snapshots
+	err = r.garbageCollect(ctx, childSnapshots, sched.Spec.Retention)
+
+	return ctrl.Result{RequeueAfter: nextSnapshotTime.Sub(r.TimeSource.Now())}, err
 }
 
 // SetupWithManager sets up the controller with the Manager.
