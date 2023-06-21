@@ -167,7 +167,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(res).To(Equal(ctrl.Result{})
+			Expect(res).To(Equal(ctrl.Result{}))
 
 			By("Checking that a snapshot has been deleted")
 			Eventually(func(g Gomega) {
