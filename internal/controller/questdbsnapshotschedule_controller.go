@@ -99,7 +99,7 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 
 	// Calculate the requeue time before any modifications
 	// are made to the NextSnapshot time
-	requeueTime := time.Until(nextSnapshotTime)
+	requeueTime := nextSnapshotTime.Sub(r.TimeSource.Now())
 	if requeueTime < 0 {
 		requeueTime = 0
 	}

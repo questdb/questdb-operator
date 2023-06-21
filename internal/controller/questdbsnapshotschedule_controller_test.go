@@ -21,7 +21,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		q     *crdv1beta1.QuestDB
 		sched *crdv1beta1.QuestDBSnapshotSchedule
 
-		timeSource = abtime.NewManual()
+		timeSource *abtime.ManualTime
 
 		timeout = time.Second * 2
 		//consistencyTimeout = time.Millisecond * 600
@@ -40,7 +40,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 				Client:     k8sClient,
 				Scheme:     scheme.Scheme,
 				Recorder:   record.NewFakeRecorder(100),
-				TimeSource: timeSource,
+				TimeSource: abtime.NewManual(),
 			}
 
 			By("Creating a QuestDB")
@@ -60,19 +60,29 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 					Schedule: "*/1 * * * *",
 				},
 			}
+
+		})
+
+		It("should requeue at the correct time when a schedule is created", func() {
+
 			Expect(k8sClient.Create(ctx, sched)).To(Succeed())
+			r.TimeSource = abtime.NewManualAtTime(sched.CreationTimestamp.Time)
+			timeSource = r.TimeSource.(*abtime.ManualTime)
 
 			By("Reconciling the QuestDBSnapshotSchedule")
-			_, err := r.Reconcile(ctx, ctrl.Request{
+			res, err := r.Reconcile(ctx, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
 			Expect(err).ToNot(HaveOccurred())
+			nextRunTime := r.TimeSource.Now().Add(time.Minute).Truncate(time.Minute)
+			Expect(res.RequeueAfter).To(Equal(nextRunTime.Sub(r.TimeSource.Now())))
+
 		})
 
 		It("should create a snapshot if the cron schedule has triggered", func() {
 
-			By("Bumping the clock a bit more than 1 minute")
-			timeSource.Advance(time.Minute + 10*time.Second)
+			By("Bumping the clock more than 1 minute")
+			timeSource.Advance(time.Minute + 5*time.Second)
 
 			By("Forcing a reconcile")
 			_, err := r.Reconcile(ctx, ctrl.Request{
@@ -115,27 +125,21 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 
 		It("should take a second snapshot if the cron schedule has triggered", func() {
 			By("Bumping the clock more than 1 minute")
-			timeSource.Advance(time.Minute + 10*time.Second)
+			timeSource.Advance(time.Minute + 5*time.Second)
 
 			By("Forcing a reconcile")
-			_, err := r.Reconcile(ctx, ctrl.Request{
+			res, err := r.Reconcile(ctx, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
+			Expect(res).To(Equal(ctrl.Result{}))
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Checking that a snapshot has been created")
-			snapList := &crdv1beta1.QuestDBSnapshotList{}
-			Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
-			Expect(snapList.Items).To(HaveLen(2))
-		})
-
-		It("should requeue the request to the time of the next trigger", func() {
-			By("Forcing a reconcile")
-			result, err := r.Reconcile(ctx, ctrl.Request{
-				NamespacedName: client.ObjectKeyFromObject(sched),
-			})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).ToNot(BeZero())
+			Eventually(func(g Gomega) {
+				snapList := &crdv1beta1.QuestDBSnapshotList{}
+				g.Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
+				g.Expect(snapList.Items).To(HaveLen(2))
+			}, timeout, interval).Should(Succeed())
 		})
 
 		It("should delete the snapshot if the retention policy is set to 1", func() {
@@ -146,16 +150,18 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 				g.Expect(k8sClient.Update(ctx, sched)).To(Succeed())
 			}, timeout, interval).Should(Succeed())
 
-			By("Setting the status of the latest snapshot to Succeeded")
-			snapList := &crdv1beta1.QuestDBSnapshotList{}
-			Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
-			Expect(snapList.Items).To(HaveLen(2))
-			for _, snap := range snapList.Items {
-				if snap.Status.Phase != crdv1beta1.SnapshotSucceeded {
-					snap.Status.Phase = crdv1beta1.SnapshotSucceeded
-					Expect(k8sClient.Status().Update(ctx, &snap)).To(Succeed())
+			By("Setting the status of all snapshots to Succeeded")
+			Eventually(func(g Gomega) {
+
+				snapList := &crdv1beta1.QuestDBSnapshotList{}
+				g.Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
+				for _, snap := range snapList.Items {
+					if snap.Status.Phase != crdv1beta1.SnapshotSucceeded {
+						snap.Status.Phase = crdv1beta1.SnapshotSucceeded
+						g.Expect(k8sClient.Status().Update(ctx, &snap)).To(Succeed())
+					}
 				}
-			}
+			}, timeout, interval).Should(Succeed())
 
 			By("Forcing a reconcile")
 			_, err := r.Reconcile(ctx, ctrl.Request{
@@ -164,8 +170,10 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Checking that a snapshot has been deleted")
-			Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
-			Expect(snapList.Items).To(HaveLen(1))
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
+				g.Expect(snapList.Items).To(HaveLen(1))
+			}, timeout, interval).Should(Succeed())
 		})
 
 	})
