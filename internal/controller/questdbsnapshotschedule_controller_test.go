@@ -74,9 +74,10 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			timeSource.Advance(time.Minute + 10*time.Second)
 
 			By("Forcing a reconcile")
-			_, err := r.Reconcile(ctx, ctrl.Request{
+			res, err := r.Reconcile(ctx, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
+			Expect(res).To(Equal(ctrl.Result{}))
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Checking that a snapshot has been created")
@@ -102,9 +103,10 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			}, timeout, interval).Should(Succeed())
 
 			By("Forcing a reconcile")
-			_, err := r.Reconcile(ctx, ctrl.Request{
+			res, err := r.Reconcile(ctx, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
+			Expect(res).To(Equal(ctrl.Result{}))
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Checking that the status has been updated")
@@ -117,15 +119,18 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			timeSource.Advance(time.Minute + 10*time.Second)
 
 			By("Forcing a reconcile")
-			_, err := r.Reconcile(ctx, ctrl.Request{
+			res, err := r.Reconcile(ctx, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
+			Expect(res).To(Equal(ctrl.Result{}))
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Checking that a snapshot has been created")
-			snapList := &crdv1beta1.QuestDBSnapshotList{}
-			Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
-			Expect(snapList.Items).To(HaveLen(2))
+			Eventually(func(g Gomega) {
+				snapList := &crdv1beta1.QuestDBSnapshotList{}
+				g.Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
+				g.Expect(snapList.Items).To(HaveLen(2))
+			}, timeout, interval).Should(Succeed())
 		})
 
 		It("should requeue the request to the time of the next trigger", func() {
@@ -157,14 +162,17 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			}
 
 			By("Forcing a reconcile")
-			_, err := r.Reconcile(ctx, ctrl.Request{
+			res, err := r.Reconcile(ctx, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
 			Expect(err).ToNot(HaveOccurred())
+			Expect(res).To(Equal(ctrl.Result{})
 
 			By("Checking that a snapshot has been deleted")
-			Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
-			Expect(snapList.Items).To(HaveLen(1))
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
+				g.Expect(snapList.Items).To(HaveLen(1))
+			}, timeout, interval).Should(Succeed())
 		})
 
 	})
