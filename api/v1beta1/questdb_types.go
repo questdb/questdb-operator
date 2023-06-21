@@ -76,12 +76,14 @@ type QuestDBEndpointStatus struct {
 
 // QuestDBStatus defines the observed state of QuestDB
 type QuestDBStatus struct {
-	Endpoints QuestDBEndpointStatus `json:"endpoints,omitempty"`
+	StatefulSetReadyReplicas int `json:"statefulSetReadyReplicas,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 //+kubebuilder:resource:shortName=qdb;qdbs
+//+kubebuilder:printcolumn:name="Ready Replicas",type=int,JSONPath=`.status.statefulSetReadyReplicas`
+//+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // QuestDB is the Schema for the questdbs API
 type QuestDB struct {
