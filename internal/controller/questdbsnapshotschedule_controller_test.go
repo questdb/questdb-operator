@@ -30,7 +30,6 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 	go func() {
 		for e := range recorder.Events {
 			testDebugLog.Info(e, "Reconciler", "QuestDBSnapshotSchedule")
-			println(e)
 		}
 	}()
 
