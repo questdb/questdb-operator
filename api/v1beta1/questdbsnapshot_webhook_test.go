@@ -40,7 +40,7 @@ var _ = Describe("QuestDBSnapshot Webhook", func() {
 			},
 			Spec: QuestDBSnapshotSpec{
 				QuestDBName:             q.Name,
-				VolumeSnapshotClassName: pointer.String("csi-hostpath-snapclass"),
+				VolumeSnapshotClassName: pointer.String("snapclass"),
 			},
 		}
 	})

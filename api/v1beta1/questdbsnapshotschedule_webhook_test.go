@@ -41,7 +41,7 @@ var _ = Describe("QuestDBSnapshotSchedule Webhook", func() {
 			Spec: QuestDBSnapshotScheduleSpec{
 				Snapshot: QuestDBSnapshotSpec{
 					QuestDBName:             q.Name,
-					VolumeSnapshotClassName: pointer.String("csi-hostpath-snapclass"),
+					VolumeSnapshotClassName: pointer.String("snapclass"),
 				},
 				Schedule: "*/1 * * * *",
 			},
