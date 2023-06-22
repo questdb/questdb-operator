@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -21,6 +22,8 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 	var (
 		timeout  = time.Second * 2
 		interval = time.Millisecond * 100
+
+		testDebugLog = ctrl.Log.WithName("test-debug")
 	)
 
 	Context("golden path case", Ordered, func() {
@@ -300,11 +303,13 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 
 		By("Advancing to the next minute for determinism")
 		advanceToTheNextMinute(timeSource)
+		testDebugLog.Info(timeSource.Now().Format(time.RFC3339Nano))
 
 		By("Advancing time by minute enough to create retention * 2 snapshots")
 		for i := int32(0); i < retention*2; i++ {
 
 			timeSource.Advance(time.Minute)
+			testDebugLog.Info(timeSource.Now().Format(time.RFC3339Nano))
 			_, err := r.Reconcile(ctx, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
@@ -325,6 +330,8 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		}
 
 		By("Getting all snapshots and ensuring that they are all failed")
+		// We need to migrate snapshots from Pending to either Succeeded or Failed for the reconciler
+		// to create a new snapshot. Since we want to test retention of failed
 		snapList := &crdv1beta1.QuestDBSnapshotList{}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
@@ -348,6 +355,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 
 		By("Advancing time a small amount to not trigger another snapshot creation")
 		r.TimeSource.(*abtime.ManualTime).Advance(5 * time.Millisecond)
+		testDebugLog.Info(timeSource.Now().Format(time.RFC3339Nano))
 
 		By("Forcing a reconcile")
 		_, err := r.Reconcile(ctx, ctrl.Request{
@@ -357,6 +365,20 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 
 		By("Checking that the list has shrunk by 1")
 		Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
+		succeeded := []crdv1beta1.QuestDBSnapshot{}
+		failed := []crdv1beta1.QuestDBSnapshot{}
+		for _, snap := range snapList.Items {
+			switch snap.Status.Phase {
+			case crdv1beta1.SnapshotSucceeded:
+				succeeded = append(succeeded, snap)
+			case crdv1beta1.SnapshotFailed:
+				failed = append(failed, snap)
+			default:
+				Expect(false).To(Equal(true), fmt.Sprintf("no snapshot should have phase %q", snap.Status.Phase))
+			}
+		}
+		Expect(succeeded).Should(HaveLen(int(retention)))
+		Expect(failed).Should(HaveLen(int(retention - 1)))
 		Expect(snapList.Items).To(HaveLen(int(retention*2 - 1)))
 
 	})
