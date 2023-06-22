@@ -52,6 +52,8 @@ var (
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	testDebugLog = ctrl.Log.WithName("test-debug")
 )
 
 func TestAPIs(t *testing.T) {

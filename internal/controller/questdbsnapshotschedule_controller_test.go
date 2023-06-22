@@ -22,8 +22,6 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 	var (
 		timeout  = time.Second * 2
 		interval = time.Millisecond * 100
-
-		testDebugLog = ctrl.Log.WithName("test-debug")
 	)
 
 	Context("golden path case", Ordered, func() {
@@ -120,7 +118,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			}, timeout, interval).Should(Succeed())
 
 			By("Advancing time a few milliseconds")
-			timeSource.Advance(time.Millisecond * 2)
+			advanceTime(timeSource, time.Millisecond*2)
 
 			By("Forcing a reconcile")
 			_, err := r.Reconcile(ctx, ctrl.Request{
@@ -180,7 +178,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			Expect(k8sClient.Status().Update(ctx, latestSnap)).To(Succeed())
 
 			By("Advancing time a few milliseconds to avoid creating a new snapshot")
-			timeSource.Advance(5 * time.Millisecond)
+			advanceTime(timeSource, 5*time.Millisecond)
 
 			By("Forcing a reconcile")
 			_, err := r.Reconcile(ctx, ctrl.Request{
@@ -243,7 +241,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		Expect(k8sClient.Create(ctx, snap)).To(Succeed())
 
 		By("Advancing time at least a minute to trigger a reconcile")
-		r.TimeSource.(*abtime.ManualTime).Advance(time.Minute + 5*time.Second)
+		advanceTime(r.TimeSource.(*abtime.ManualTime), time.Minute+5*time.Second)
 
 		By("Forcing a reconcile")
 		_, err := r.Reconcile(ctx, ctrl.Request{
@@ -308,7 +306,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		By("Advancing time by minute enough to create retention * 2 snapshots")
 		for i := int32(0); i < retention*2; i++ {
 
-			timeSource.Advance(time.Minute)
+			advanceTime(timeSource, time.Minute)
 			testDebugLog.Info(timeSource.Now().Format(time.RFC3339Nano))
 			_, err := r.Reconcile(ctx, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
@@ -354,7 +352,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		}
 
 		By("Advancing time a small amount to not trigger another snapshot creation")
-		r.TimeSource.(*abtime.ManualTime).Advance(5 * time.Millisecond)
+		advanceTime(r.TimeSource.(*abtime.ManualTime), 5*time.Millisecond)
 		testDebugLog.Info(timeSource.Now().Format(time.RFC3339Nano))
 
 		By("Forcing a reconcile")
@@ -386,7 +384,23 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 })
 
 func advanceToTheNextMinute(timeSource *abtime.ManualTime) {
-	nextMinute := timeSource.Now().Add(time.Minute).Truncate(time.Minute)
+	now := timeSource.Now()
+	nextMinute := now.Add(time.Minute).Truncate(time.Minute)
 	timeToNextMinute := nextMinute.Sub(timeSource.Now())
 	timeSource.Advance(timeToNextMinute)
+	testDebugLog.Info("Advanced Time To Next Minute", map[string]string{
+		"oldTime":    now.Format(time.RFC3339Nano),
+		"nextMinute": nextMinute.Format(time.RFC3339Nano),
+		"newTime":    timeSource.Now().Format(time.RFC3339Nano),
+	})
+}
+
+func advanceTime(timeSource *abtime.ManualTime, d time.Duration) {
+	now := timeSource.Now()
+	timeSource.Advance(d)
+	testDebugLog.Info("Advanced Time", map[string]string{
+		"oldTime":  now.Format(time.RFC3339Nano),
+		"duration": d.String(),
+		"newTime":  timeSource.Now().Format(time.RFC3339Nano),
+	})
 }
