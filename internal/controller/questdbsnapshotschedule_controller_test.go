@@ -22,7 +22,17 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 	var (
 		timeout  = time.Second * 2
 		interval = time.Millisecond * 100
+
+		recorder = record.NewFakeRecorder(100)
 	)
+
+	// Set up recorder chan
+	go func() {
+		for e := range recorder.Events {
+			testDebugLog.Info(e, "Reconciler", "QuestDBSnapshotSchedule")
+			println(e)
+		}
+	}()
 
 	Context("golden path case", Ordered, func() {
 		var (
@@ -38,7 +48,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			r = &QuestDBSnapshotScheduleReconciler{
 				Client:     k8sClient,
 				Scheme:     scheme.Scheme,
-				Recorder:   record.NewFakeRecorder(100),
+				Recorder:   recorder,
 				TimeSource: abtime.NewManual(),
 			}
 
@@ -205,7 +215,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		r = &QuestDBSnapshotScheduleReconciler{
 			Client:     k8sClient,
 			Scheme:     scheme.Scheme,
-			Recorder:   record.NewFakeRecorder(100),
+			Recorder:   recorder,
 			TimeSource: abtime.NewManual(),
 		}
 
@@ -273,7 +283,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		r = &QuestDBSnapshotScheduleReconciler{
 			Client:     k8sClient,
 			Scheme:     scheme.Scheme,
-			Recorder:   record.NewFakeRecorder(100),
+			Recorder:   recorder,
 			TimeSource: abtime.NewManual(),
 		}
 
@@ -301,13 +311,11 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 
 		By("Advancing to the next minute for determinism")
 		advanceToTheNextMinute(timeSource)
-		testDebugLog.Info(timeSource.Now().Format(time.RFC3339Nano))
 
 		By("Advancing time by minute enough to create retention * 2 snapshots")
 		for i := int32(0); i < retention*2; i++ {
 
 			advanceTime(timeSource, time.Minute)
-			testDebugLog.Info(timeSource.Now().Format(time.RFC3339Nano))
 			_, err := r.Reconcile(ctx, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
@@ -353,7 +361,6 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 
 		By("Advancing time a small amount to not trigger another snapshot creation")
 		advanceTime(r.TimeSource.(*abtime.ManualTime), 5*time.Millisecond)
-		testDebugLog.Info(timeSource.Now().Format(time.RFC3339Nano))
 
 		By("Forcing a reconcile")
 		_, err := r.Reconcile(ctx, ctrl.Request{
