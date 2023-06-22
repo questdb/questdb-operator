@@ -357,7 +357,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		advanceTime(r.TimeSource.(*abtime.ManualTime), 5*time.Millisecond)
 
 		By("Forcing a reconcile")
-		_, err := r.Reconcile(ctx, ctrl.Request{
+		_, err := reconcileSnapshotSchedules(ctx, r, ctrl.Request{
 			NamespacedName: client.ObjectKeyFromObject(sched),
 		})
 		Expect(err).ToNot(HaveOccurred())

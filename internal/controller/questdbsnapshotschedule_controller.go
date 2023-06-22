@@ -56,7 +56,7 @@ type QuestDBSnapshotScheduleReconciler struct {
 func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var (
 		err        error
-		latestSnap *crdv1beta1.QuestDBSnapshot
+		latestSnap = &crdv1beta1.QuestDBSnapshot{}
 
 		sched          = &crdv1beta1.QuestDBSnapshotSchedule{}
 		childSnapshots = &crdv1beta1.QuestDBSnapshotList{}
@@ -77,24 +77,20 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 	}
 
 	// Get child snapshots
-	if childSnapshots, err = r.getChildSnapshots(ctx, sched); err != nil {
+	if childSnapshots, err = r.getOrderedChildSnapshots(ctx, sched); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	// Since snapshots are sorted in descending order, the latest snapshot is the first item
 	if len(childSnapshots.Items) > 0 {
-		if len(childSnapshots.Items) > 0 {
-			latestSnap = &childSnapshots.Items[0]
-		}
+		latestSnap = &childSnapshots.Items[0]
 	}
 
 	// Update the snapshot phase status based on the latest snapshot
-	if latestSnap != nil {
-		if latestSnap.Status.Phase != sched.Status.SnapshotPhase {
-			sched.Status.SnapshotPhase = latestSnap.Status.Phase
-			if err = r.Status().Update(ctx, sched); err != nil {
-				return ctrl.Result{}, err
-			}
+	if latestSnap.Status.Phase != sched.Status.SnapshotPhase {
+		sched.Status.SnapshotPhase = latestSnap.Status.Phase
+		if err = r.Status().Update(ctx, sched); err != nil {
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -113,7 +109,7 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 		}
 
 		// Skip taking a snapshot if the latest snapshot is not complete (succeeded or failed or empty phase)
-		if latestSnap != nil && !latestSnap.IsComplete() {
+		if sched.Status.SnapshotPhase != "" && !latestSnap.IsComplete() {
 			r.Recorder.Event(sched, "Warning", "SnapshotSkipped", fmt.Sprintf("Skipping snapshot because the latest snapshot is not complete: %s", latestSnap.Name))
 		} else {
 			// Otherwise, build the snapshot
@@ -170,7 +166,7 @@ func (r *QuestDBSnapshotScheduleReconciler) buildSnapshot(sched *crdv1beta1.Ques
 
 }
 
-func (r *QuestDBSnapshotScheduleReconciler) getChildSnapshots(ctx context.Context, sched *crdv1beta1.QuestDBSnapshotSchedule) (*crdv1beta1.QuestDBSnapshotList, error) {
+func (r *QuestDBSnapshotScheduleReconciler) getOrderedChildSnapshots(ctx context.Context, sched *crdv1beta1.QuestDBSnapshotSchedule) (*crdv1beta1.QuestDBSnapshotList, error) {
 	var (
 		err error
 
