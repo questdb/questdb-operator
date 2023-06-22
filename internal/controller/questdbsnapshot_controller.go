@@ -353,7 +353,6 @@ func (r *QuestDBSnapshotReconciler) handlePhaseEmpty(ctx context.Context, snap *
 	if err := r.Status().Update(ctx, snap); err != nil {
 		return ctrl.Result{}, err
 	}
-	r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotPending", "Running 'SNAPSHOT PREPARE;' for snapshot %s", snap.Name)
 	return ctrl.Result{}, nil
 }
 
@@ -399,6 +398,7 @@ func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap
 	}
 
 	// Create the pre-snapshot job
+	r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotPending", "Running 'SNAPSHOT PREPARE;' for snapshot %s", snap.Name)
 	job, err := r.buildPreSnapshotJob(ctx, snap)
 	if err != nil {
 		return ctrl.Result{}, err
