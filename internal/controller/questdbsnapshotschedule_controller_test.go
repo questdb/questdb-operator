@@ -388,19 +388,19 @@ func advanceToTheNextMinute(timeSource *abtime.ManualTime) {
 	nextMinute := now.Add(time.Minute).Truncate(time.Minute)
 	timeToNextMinute := nextMinute.Sub(timeSource.Now())
 	timeSource.Advance(timeToNextMinute)
-	testDebugLog.Info("Advanced Time To Next Minute", map[string]string{
-		"oldTime":    now.Format(time.RFC3339Nano),
-		"nextMinute": nextMinute.Format(time.RFC3339Nano),
-		"newTime":    timeSource.Now().Format(time.RFC3339Nano),
-	})
+	testDebugLog.Info("Advanced Time To Next Minute",
+		"oldTime", now.Format(time.RFC3339Nano),
+		"nextMinute", nextMinute.Format(time.RFC3339Nano),
+		"newTime", timeSource.Now().Format(time.RFC3339Nano),
+	)
 }
 
 func advanceTime(timeSource *abtime.ManualTime, d time.Duration) {
 	now := timeSource.Now()
 	timeSource.Advance(d)
-	testDebugLog.Info("Advanced Time", map[string]string{
-		"oldTime":  now.Format(time.RFC3339Nano),
-		"duration": d.String(),
-		"newTime":  timeSource.Now().Format(time.RFC3339Nano),
-	})
+	testDebugLog.Info("Advanced Time",
+		"oldTime", now.Format(time.RFC3339Nano),
+		"duration", d.String(),
+		"newTime", timeSource.Now().Format(time.RFC3339Nano),
+	)
 }
