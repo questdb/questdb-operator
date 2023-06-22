@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -15,12 +17,15 @@ import (
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 	var (
 		timeout  = time.Second * 2
 		interval = time.Millisecond * 100
+
+		recorder = record.NewFakeRecorder(100)
 	)
 
 	Context("golden path case", Ordered, func() {
@@ -37,7 +42,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			r = &QuestDBSnapshotScheduleReconciler{
 				Client:     k8sClient,
 				Scheme:     scheme.Scheme,
-				Recorder:   record.NewFakeRecorder(100),
+				Recorder:   recorder,
 				TimeSource: abtime.NewManual(),
 			}
 
@@ -68,7 +73,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			timeSource = r.TimeSource.(*abtime.ManualTime)
 
 			By("Reconciling the QuestDBSnapshotSchedule")
-			res, err := r.Reconcile(ctx, ctrl.Request{
+			res, err := reconcileSnapshotSchedules(ctx, r, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -83,7 +88,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			advanceToTheNextMinute(timeSource)
 
 			By("Forcing a reconcile")
-			_, err := r.Reconcile(ctx, ctrl.Request{
+			_, err := reconcileSnapshotSchedules(ctx, r, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -117,10 +122,10 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			}, timeout, interval).Should(Succeed())
 
 			By("Advancing time a few milliseconds")
-			timeSource.Advance(time.Millisecond * 2)
+			advanceTime(timeSource, time.Millisecond*2)
 
 			By("Forcing a reconcile")
-			_, err := r.Reconcile(ctx, ctrl.Request{
+			_, err := reconcileSnapshotSchedules(ctx, r, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -135,7 +140,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			advanceToTheNextMinute(timeSource)
 
 			By("Forcing a reconcile")
-			_, err := r.Reconcile(ctx, ctrl.Request{
+			_, err := reconcileSnapshotSchedules(ctx, r, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -177,10 +182,10 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			Expect(k8sClient.Status().Update(ctx, latestSnap)).To(Succeed())
 
 			By("Advancing time a few milliseconds to avoid creating a new snapshot")
-			timeSource.Advance(5 * time.Millisecond)
+			advanceTime(timeSource, 5*time.Millisecond)
 
 			By("Forcing a reconcile")
-			_, err := r.Reconcile(ctx, ctrl.Request{
+			_, err := reconcileSnapshotSchedules(ctx, r, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -204,7 +209,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		r = &QuestDBSnapshotScheduleReconciler{
 			Client:     k8sClient,
 			Scheme:     scheme.Scheme,
-			Recorder:   record.NewFakeRecorder(100),
+			Recorder:   recorder,
 			TimeSource: abtime.NewManual(),
 		}
 
@@ -240,10 +245,10 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		Expect(k8sClient.Create(ctx, snap)).To(Succeed())
 
 		By("Advancing time at least a minute to trigger a reconcile")
-		r.TimeSource.(*abtime.ManualTime).Advance(time.Minute + 5*time.Second)
+		advanceTime(r.TimeSource.(*abtime.ManualTime), time.Minute+5*time.Second)
 
 		By("Forcing a reconcile")
-		_, err := r.Reconcile(ctx, ctrl.Request{
+		_, err := reconcileSnapshotSchedules(ctx, r, ctrl.Request{
 			NamespacedName: client.ObjectKeyFromObject(sched),
 		})
 		Expect(err).ToNot(HaveOccurred())
@@ -272,7 +277,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		r = &QuestDBSnapshotScheduleReconciler{
 			Client:     k8sClient,
 			Scheme:     scheme.Scheme,
-			Recorder:   record.NewFakeRecorder(100),
+			Recorder:   recorder,
 			TimeSource: abtime.NewManual(),
 		}
 
@@ -304,8 +309,8 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		By("Advancing time by minute enough to create retention * 2 snapshots")
 		for i := int32(0); i < retention*2; i++ {
 
-			timeSource.Advance(time.Minute)
-			_, err := r.Reconcile(ctx, ctrl.Request{
+			advanceTime(timeSource, time.Minute)
+			_, err := reconcileSnapshotSchedules(ctx, r, ctrl.Request{
 				NamespacedName: client.ObjectKeyFromObject(sched),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -325,6 +330,8 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		}
 
 		By("Getting all snapshots and ensuring that they are all failed")
+		// We need to migrate snapshots from Pending to either Succeeded or Failed for the reconciler
+		// to create a new snapshot. Since we want to test retention of failed
 		snapList := &crdv1beta1.QuestDBSnapshotList{}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
@@ -347,16 +354,30 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		}
 
 		By("Advancing time a small amount to not trigger another snapshot creation")
-		r.TimeSource.(*abtime.ManualTime).Advance(5 * time.Millisecond)
+		advanceTime(r.TimeSource.(*abtime.ManualTime), 5*time.Millisecond)
 
 		By("Forcing a reconcile")
-		_, err := r.Reconcile(ctx, ctrl.Request{
+		_, err := reconcileSnapshotSchedules(ctx, r, ctrl.Request{
 			NamespacedName: client.ObjectKeyFromObject(sched),
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Checking that the list has shrunk by 1")
 		Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
+		succeeded := []crdv1beta1.QuestDBSnapshot{}
+		failed := []crdv1beta1.QuestDBSnapshot{}
+		for _, snap := range snapList.Items {
+			switch snap.Status.Phase {
+			case crdv1beta1.SnapshotSucceeded:
+				succeeded = append(succeeded, snap)
+			case crdv1beta1.SnapshotFailed:
+				failed = append(failed, snap)
+			default:
+				Expect(false).To(Equal(true), fmt.Sprintf("no snapshot should have phase %q", snap.Status.Phase))
+			}
+		}
+		Expect(succeeded).Should(HaveLen(int(retention)))
+		Expect(failed).Should(HaveLen(int(retention - 1)))
 		Expect(snapList.Items).To(HaveLen(int(retention*2 - 1)))
 
 	})
@@ -364,7 +385,40 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 })
 
 func advanceToTheNextMinute(timeSource *abtime.ManualTime) {
-	nextMinute := timeSource.Now().Add(time.Minute).Truncate(time.Minute)
+	now := timeSource.Now()
+	nextMinute := now.Add(time.Minute).Truncate(time.Minute)
 	timeToNextMinute := nextMinute.Sub(timeSource.Now())
 	timeSource.Advance(timeToNextMinute)
+	testDebugLog.Info("Advanced Time To Next Minute",
+		"oldTime", now.Format(time.RFC3339Nano),
+		"nextMinute", nextMinute.Format(time.RFC3339Nano),
+		"newTime", timeSource.Now().Format(time.RFC3339Nano),
+	)
+}
+
+func advanceTime(timeSource *abtime.ManualTime, d time.Duration) {
+	now := timeSource.Now()
+	timeSource.Advance(d)
+	testDebugLog.Info("Advanced Time",
+		"oldTime", now.Format(time.RFC3339Nano),
+		"duration", d.String(),
+		"newTime", timeSource.Now().Format(time.RFC3339Nano),
+	)
+}
+
+func reconcileSnapshotSchedules(ctx context.Context, r *QuestDBSnapshotScheduleReconciler, req reconcile.Request) (reconcile.Result, error) {
+	testDebugLog.Info("Reconciling", "resource", req.String())
+	res, err := r.Reconcile(ctx, req)
+
+	// Flush the event buffer synchronously so we can accurately determine when things are happening
+	var flushed bool
+	for !flushed {
+		select {
+		case e := <-r.Recorder.(*record.FakeRecorder).Events:
+			testDebugLog.Info(e, "Reconciler", "QuestDBSnapshotSchedule")
+		default:
+			flushed = true
+		}
+	}
+	return res, err
 }
