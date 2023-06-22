@@ -364,7 +364,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 })
 
 func advanceToTheNextMinute(timeSource *abtime.ManualTime) {
-	nextMinute := timeSource.Now().Add(time.Minute).Truncate(time.Second)
+	nextMinute := timeSource.Now().Add(time.Minute).Truncate(time.Minute)
 	timeToNextMinute := nextMinute.Sub(timeSource.Now())
 	timeSource.Advance(timeToNextMinute)
 }
