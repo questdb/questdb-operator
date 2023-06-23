@@ -29,7 +29,7 @@ type QuestDBSnapshotScheduleSpec struct {
 
 // QuestDBSnapshotStatus defines the observed state of QuestDBSnapshot
 type QuestDBSnapshotScheduleStatus struct {
-	NextSnapshot  metav1.Time          `json:"nextSnapshot,omitempty"`
+	LastSnapshot  metav1.Time          `json:"lastSnapshot,omitempty"`
 	SnapshotPhase QuestDBSnapshotPhase `json:"snapshotPhase,omitempty"`
 }
 

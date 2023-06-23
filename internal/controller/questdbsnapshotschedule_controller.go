@@ -95,14 +95,14 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 	}
 
 	// Check if we are due for a snapshot
-	nextSnapshotTime, err := r.getNextSnapshotTime(sched)
+	lastSnapshotTime, err := r.getLastSnapshotTime(sched)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if nextSnapshotTime.Compare(r.TimeSource.Now()) <= 0 {
+	if lastSnapshotTime.Compare(r.TimeSource.Now()) <= 0 {
 		// Update the next snapshot time
-		sched.Status.NextSnapshot = metav1.NewTime(nextSnapshotTime)
+		sched.Status.LastSnapshot = metav1.NewTime(lastSnapshotTime)
 		if err = r.Status().Update(ctx, sched); err != nil {
 			// If this update fails, re-reconcile immediately
 			return ctrl.Result{}, err
@@ -134,7 +134,7 @@ func (r *QuestDBSnapshotScheduleReconciler) Reconcile(ctx context.Context, req c
 	// Garbage collect old successful snapshots
 	err = r.garbageCollect(ctx, childSnapshots, sched.Spec.Retention)
 
-	return ctrl.Result{RequeueAfter: nextSnapshotTime.Sub(r.TimeSource.Now())}, err
+	return ctrl.Result{RequeueAfter: lastSnapshotTime.Sub(r.TimeSource.Now())}, err
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -217,14 +217,14 @@ func (r *QuestDBSnapshotScheduleReconciler) garbageCollect(ctx context.Context, 
 
 }
 
-func (r *QuestDBSnapshotScheduleReconciler) getNextSnapshotTime(sched *crdv1beta1.QuestDBSnapshotSchedule) (time.Time, error) {
+func (r *QuestDBSnapshotScheduleReconciler) getLastSnapshotTime(sched *crdv1beta1.QuestDBSnapshotSchedule) (time.Time, error) {
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	crontab, err := parser.Parse(sched.Spec.Schedule)
 	if err != nil {
 		return time.Time{}, err
 	}
 
-	lastTime := sched.Status.NextSnapshot.Time
+	lastTime := sched.Status.LastSnapshot.Time
 	if lastTime.IsZero() {
 		lastTime = sched.CreationTimestamp.Time
 	}
