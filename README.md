@@ -23,6 +23,33 @@ Here's a step-by-step example of this installation in an AWS blg post:
 
 - cert manager
 
+### Autoreload
+
+The controller does not automatically update the StatefulSet on config changes, but you can enable this by adding
+a `stakater/Reloader` annotation to the StatefulSet directly, pointing to the child ConfigMap. The controller will persist any annotations made to child objects, so this will work with no issues. See <https://github.com/stakater/Reloader> for more information.
+
+### Credentials
+
+To use a secret as a source for ilp or psql credentials, you need to add the following annotations to an existing secret:
+
+```yaml
+# ILP Secret
+annotations:
+  questdb.crd.questdb.io/name: questdb-sample
+  questdb.crd.questdb.io/secret-type: ilp
+
+# PSQL Secret
+annotations:
+  questdb.crd.questdb.io/name: questdb-sample
+  questdb.crd.questdb.io/secret-type: psql
+```
+
+The ILP Secret must contain an `auth.json` key that contains your JWK used for ILP authentication. This will be mounted to the database container as a file and referenced by the database.
+
+The PSQL Secret must contain the `QDB_PG_USER` and `QDB_PG_PASSWORD` keys. These will be mounted to the container as environment variables. Be sure not to overwrite these in `questdb.spec.extraEnv`, as this can cause unexpected behavior, and add-ons like snapshots will likely break.
+
+See the [yaml examples](config/samples/secrets.yaml) for more information
+
 ## Getting Started
 You’ll need a Kubernetes cluster to run against. You can use [KIND](https://sigs.k8s.io/kind) to get a local cluster for testing, or run against a remote cluster.
 **Note:** Your controller will automatically use the current context in your kubeconfig file (i.e. whatever cluster `kubectl cluster-info` shows).
@@ -61,7 +88,6 @@ make undeploy
 ```
 
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
 
 ### How it works
 This project aims to follow the Kubernetes [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/).
@@ -94,33 +120,6 @@ make manifests
 **NOTE:** Run `make --help` for more information on all potential `make` targets
 
 More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
-
-### Autoreload
-
-The controller does not automatically update the StatefulSet on config changes, but you can enable this by adding
-a `stakater/Reloader` annotation to the StatefulSet directly, pointing to the child ConfigMap. The controller will persist any annotations made to child objects, so this will work with no issues. See <https://github.com/stakater/Reloader> for more information.
-
-### Credentials
-
-To use a secret as a source for ilp or psql credentials, you need to add the following annotations to an existing secret:
-
-```yaml
-# ILP Secret
-annotations:
-  questdb.crd.questdb.io/name: questdb-sample
-  questdb.crd.questdb.io/secret-type: ilp
-
-# PSQL Secret
-annotations:
-  questdb.crd.questdb.io/name: questdb-sample
-  questdb.crd.questdb.io/secret-type: psql
-```
-
-The ILP Secret must contain an `auth.json` key that contains your JWK used for ILP authentication. This will be mounted to the database container as a file and referenced by the database.
-
-The PSQL Secret must contain the `QDB_PG_USER` and `QDB_PG_PASSWORD` keys. These will be mounted to the container as environment variables. Be sure not to overwrite these in `questdb.spec.extraEnv`, as this can cause unexpected behavior, and add-ons like snapshots will likely break.
-
-See the [yaml examples](config/samples/secrets.yaml) for more information
 
 ## License
 
