@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -10,6 +11,7 @@ import (
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 	testutils "github.com/questdb/questdb-operator/tests/utils"
 	"github.com/thejerf/abtime"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
@@ -116,7 +118,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		})
 
 		It("should report the phase of the latest snapshot", func() {
-			By("Getting the latest snapshot by using the current time")
+			By("Getting the latest snapshot by using the current frozen time")
 			snap := &crdv1beta1.QuestDBSnapshot{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      sched.Name + "-" + timeSource.Now().Format("20060102150405"),
@@ -130,14 +132,14 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 				g.Expect(snap.Status.Phase).To(Equal(crdv1beta1.SnapshotFailed))
 			}, timeout, interval).Should(Succeed())
 
-			By("Setting the snapshot to succeeded (different status than the first status)")
+			By("Setting the snapshot to succeeded (different status than the first snapshot, which is Failed)")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(snap), snap)).To(Succeed())
 				snap.Status.Phase = crdv1beta1.SnapshotSucceeded
 				g.Expect(k8sClient.Status().Update(ctx, snap)).Should(Succeed())
 			}, timeout, interval).Should(Succeed())
 
-			By("Advancing time a few milliseconds to prevent another reconcile")
+			By("Advancing time a few milliseconds to prevent another snapshot from being created in the next reconcile")
 			advanceTime(timeSource, time.Millisecond*5)
 
 			By("Reconciling the schedule")
@@ -146,7 +148,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			})
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Checking that the schedule status has been updated")
+			By("Checking that the schedule status has been updated to match the latest snapshot")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sched), sched)).To(Succeed())
 			Expect(sched.Status.SnapshotPhase).To(Equal(crdv1beta1.SnapshotSucceeded))
 		})
@@ -171,7 +173,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 				}
 			}, timeout, interval).Should(Succeed())
 
-			By("Advancing time a few milliseconds to avoid creating a new snapshot")
+			By("Advancing time a few milliseconds to avoid creating a new snapshot on reconcile")
 			advanceTime(timeSource, 5*time.Millisecond)
 
 			By("Forcing a reconcile")
@@ -256,7 +258,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			g.Expect(k8sClient.Update(ctx, snap)).Should(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		By("Advancing time just before the next minute to not create a new snapshot")
+		By("Advancing time just before the next minute to not create a new snapshot on reconcile")
 		advanceJustBeforeTheNextMinute(timeSource)
 
 		By("Forcing a reconcile")
@@ -344,7 +346,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			}
 		}, timeout, interval).Should(Succeed())
 
-		By("Set (retention + 1) snapshots to succeeded")
+		By("Set (retention + 1) snapshots to succeeded, which should force the reconciler to delete one of them")
 		for idx := range snapList.Items {
 			if idx < int(retention+1) {
 				Eventually(func(g Gomega) {
@@ -367,7 +369,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Checking that one snapshot has a status of succeeded and a non-nil deletion timestamp")
-		// Since they all still have finalizers (because we directly transi), the snapshot won't actually be deleted
+		// Since they all still have finalizers, the snapshot won't actually be deleted
 		Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
 		var foundDeletedSnap bool
 		for _, snap := range snapList.Items {
@@ -377,6 +379,99 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 				foundDeletedSnap = true
 			}
 		}
+	})
+
+	Context("Requeue and LastSnapshotTime tests", func() {
+		cases := []map[string]any{
+			{
+				"description":             "Given a 1x a day schedule, it should trigger a snapshot if exactly 24 hours has passed since the last snapshot",
+				"cron":                    "0 0 * * *",
+				"currentTime":             "2023-01-02 00:00:00",
+				"lastSnapshotTime":        "2023-01-01 00:00:00",
+				"expectedRequeueDuration": time.Hour * 24,
+				"expectSnapshotCreated":   true,
+			},
+			{
+				"description":             "Given a 1x a day schedule, it should trigger a snapshot 24 hours + 1 second have elapsed",
+				"cron":                    "0 0 * * *",
+				"currentTime":             "2023-01-02 00:00:01",
+				"lastSnapshotTime":        "2023-01-01 00:00:00",
+				"expectedRequeueDuration": time.Hour*24 - time.Second,
+				"expectSnapshotCreated":   true,
+			},
+			{
+				"description":             "Given a 1x a day schedule, it should not trigger a snapshot if a day has not elapsed since the last snapshot",
+				"cron":                    "0 0 * * *",
+				"currentTime":             "2023-01-01 12:00:00",
+				"lastSnapshotTime":        "2023-01-01 00:00:00",
+				"expectedRequeueDuration": time.Hour * 12,
+				"expectSnapshotCreated":   false,
+			},
+		}
+
+		for _, c := range cases {
+			c := c
+
+			It(c["description"].(string), func() {
+
+				currentTime, err := time.ParseInLocation(time.DateTime, c["currentTime"].(string), time.Local)
+				Expect(err).Should(Succeed())
+				lastSnapshotTime, err := time.ParseInLocation(time.DateTime, c["lastSnapshotTime"].(string), time.Local)
+				Expect(err).Should(Succeed())
+
+				sched := &crdv1beta1.QuestDBSnapshotSchedule{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-sched",
+						Namespace: fmt.Sprintf("test-%d", time.Now().UnixNano()),
+					},
+					Spec: crdv1beta1.QuestDBSnapshotScheduleSpec{
+						Schedule: c["cron"].(string),
+						Snapshot: crdv1beta1.QuestDBSnapshotSpec{
+							QuestDBName: "test-qdb",
+						},
+					},
+				}
+
+				By("Creating the namespace")
+				n := &v1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: sched.Namespace,
+					},
+				}
+				Expect(k8sClient.Create(ctx, n)).Should(Succeed())
+
+				By("Creating the schedule")
+				Expect(k8sClient.Create(ctx, sched)).Should(Succeed())
+
+				By("Updating the schedule's status")
+				sched.Status = crdv1beta1.QuestDBSnapshotScheduleStatus{
+					LastSnapshot: metav1.NewTime(lastSnapshotTime),
+				}
+				Expect(k8sClient.Status().Update(ctx, sched)).To(Succeed())
+
+				r := QuestDBSnapshotScheduleReconciler{
+					Client:     k8sClient,
+					Scheme:     scheme.Scheme,
+					Recorder:   recorder,
+					TimeSource: abtime.NewManualAtTime(currentTime),
+				}
+
+				res, err := reconcileSnapshotSchedules(ctx, &r, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(sched)})
+				Expect(err).To(Succeed())
+				Expect(res.RequeueAfter).To(Equal(c["expectedRequeueDuration"]))
+
+				snapList := &crdv1beta1.QuestDBSnapshotList{}
+				Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).To(Succeed())
+				var expectedLen int
+				if c["expectSnapshotCreated"].(bool) {
+					expectedLen++
+				}
+				Expect(snapList.Items).To(HaveLen(expectedLen))
+
+			})
+
+		}
+
 	})
 
 })
