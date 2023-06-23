@@ -28,12 +28,6 @@ const (
 	AnnotationQuestDBSecretType        = "questdb.crd.questdb.io/secret-type"
 )
 
-type QuestDBPortSpec struct {
-	Ilp  int32 `json:"ilp,omitempty"`
-	Psql int32 `json:"psql,omitempty"`
-	Http int32 `json:"http,omitempty"`
-}
-
 type QuestDBResourcesSpec struct {
 	Limits   v1.ResourceList `json:"limits,omitempty"`
 	Requests v1.ResourceList `json:"requests,omitempty"`
