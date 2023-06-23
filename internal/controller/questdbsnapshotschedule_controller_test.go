@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -10,6 +11,7 @@ import (
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 	testutils "github.com/questdb/questdb-operator/tests/utils"
 	"github.com/thejerf/abtime"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
@@ -377,6 +379,99 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 				foundDeletedSnap = true
 			}
 		}
+	})
+
+	Context("Requeue and LastSnapshotTime tests", func() {
+		cases := []map[string]any{
+			{
+				"description":             "Given a 1x a day schedule, it should trigger a snapshot if exactly 24 hours has passed since the last snapshot",
+				"cron":                    "0 0 * * *",
+				"currentTime":             "2023-01-02 00:00:00",
+				"lastSnapshotTime":        "2023-01-01 00:00:00",
+				"expectedRequeueDuration": time.Hour * 24,
+				"expectSnapshotCreated":   true,
+			},
+			{
+				"description":             "Given a 1x a day schedule, it should trigger a snapshot 24 hours + 1 second have elapsed",
+				"cron":                    "0 0 * * *",
+				"currentTime":             "2023-01-02 00:00:01",
+				"lastSnapshotTime":        "2023-01-01 00:00:00",
+				"expectedRequeueDuration": time.Hour*24 - time.Second,
+				"expectSnapshotCreated":   true,
+			},
+			{
+				"description":             "Given a 1x a day schedule, it should not trigger a snapshot if a day has not elapsed since the last snapshot",
+				"cron":                    "0 0 * * *",
+				"currentTime":             "2023-01-01 12:00:00",
+				"lastSnapshotTime":        "2023-01-01 00:00:00",
+				"expectedRequeueDuration": time.Hour * 12,
+				"expectSnapshotCreated":   false,
+			},
+		}
+
+		for _, c := range cases {
+			c := c
+
+			It(c["description"].(string), func() {
+
+				currentTime, err := time.ParseInLocation(time.DateTime, c["currentTime"].(string), time.Local)
+				Expect(err).Should(Succeed())
+				lastSnapshotTime, err := time.ParseInLocation(time.DateTime, c["lastSnapshotTime"].(string), time.Local)
+				Expect(err).Should(Succeed())
+
+				sched := &crdv1beta1.QuestDBSnapshotSchedule{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-sched",
+						Namespace: fmt.Sprintf("test-%d", time.Now().UnixNano()),
+					},
+					Spec: crdv1beta1.QuestDBSnapshotScheduleSpec{
+						Schedule: c["cron"].(string),
+						Snapshot: crdv1beta1.QuestDBSnapshotSpec{
+							QuestDBName: "test-qdb",
+						},
+					},
+				}
+
+				By("Creating the namespace")
+				n := &v1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: sched.Namespace,
+					},
+				}
+				Expect(k8sClient.Create(ctx, n)).Should(Succeed())
+
+				By("Creating the schedule")
+				Expect(k8sClient.Create(ctx, sched)).Should(Succeed())
+
+				By("Updating the schedule's status")
+				sched.Status = crdv1beta1.QuestDBSnapshotScheduleStatus{
+					LastSnapshot: metav1.NewTime(lastSnapshotTime),
+				}
+				Expect(k8sClient.Status().Update(ctx, sched)).To(Succeed())
+
+				r := QuestDBSnapshotScheduleReconciler{
+					Client:     k8sClient,
+					Scheme:     scheme.Scheme,
+					Recorder:   recorder,
+					TimeSource: abtime.NewManualAtTime(currentTime),
+				}
+
+				res, err := reconcileSnapshotSchedules(ctx, &r, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(sched)})
+				Expect(err).To(Succeed())
+				Expect(res.RequeueAfter).To(Equal(c["expectedRequeueDuration"]))
+
+				snapList := &crdv1beta1.QuestDBSnapshotList{}
+				Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).To(Succeed())
+				var expectedLen int
+				if c["expectSnapshotCreated"].(bool) {
+					expectedLen++
+				}
+				Expect(snapList.Items).To(HaveLen(expectedLen))
+
+			})
+
+		}
+
 	})
 
 })
