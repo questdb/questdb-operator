@@ -73,7 +73,7 @@ spec:
           status:
             description: QuestDBSnapshotStatus defines the observed state of QuestDBSnapshot
             properties:
-              nextSnapshot:
+              lastSnapshot:
                 format: date-time
                 type: string
               snapshotPhase:
