@@ -358,6 +358,15 @@ func (r *QuestDBSnapshotReconciler) handlePhaseEmpty(ctx context.Context, snap *
 
 func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
 
+	if snap.Status.SnapshotStarted == nil {
+		now := metav1.Now()
+		snap.Status.SnapshotStarted = &now
+		err := r.Status().Update(ctx, snap)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	// Check that the volume snapshot class exists
 	if snap.Spec.VolumeSnapshotClassName != nil {
 		volSnapClass := &volumesnapshotv1.VolumeSnapshotClass{}
@@ -525,10 +534,25 @@ func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, s
 }
 
 func (r *QuestDBSnapshotReconciler) handlePhaseFailed(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
-	return ctrl.Result{}, nil
+	var err error
+	if snap.Status.SnapshotFinished == nil {
+		now := metav1.Now()
+		snap.Status.SnapshotFinished = &now
+		err = r.Status().Update(ctx, snap)
+	}
+	return ctrl.Result{}, err
 }
 
 func (r *QuestDBSnapshotReconciler) handlePhaseSucceeded(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
+	if snap.Status.SnapshotFinished == nil {
+		now := metav1.Now()
+		snap.Status.SnapshotFinished = &now
+		err := r.Status().Update(ctx, snap)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	// Delete the pre and post snapshot jobs
 	job := &batchv1.Job{}
 	for _, jobName := range []string{fmt.Sprintf("%s-pre-snapshot", snap.Name), fmt.Sprintf("%s-post-snapshot", snap.Name)} {

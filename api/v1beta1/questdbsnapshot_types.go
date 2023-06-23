@@ -49,8 +49,8 @@ type QuestDBSnapshotSpec struct {
 // QuestDBSnapshotStatus defines the observed state of QuestDBSnapshot
 type QuestDBSnapshotStatus struct {
 	Phase            QuestDBSnapshotPhase `json:"phase,omitempty"`
-	SnapshotStarted  metav1.Time          `json:"snapshotStarted,omitempty"`
-	SnapshotFinished metav1.Time          `json:"snapshotFinished,omitempty"`
+	SnapshotStarted  *metav1.Time         `json:"snapshotStarted,omitempty"`
+	SnapshotFinished *metav1.Time         `json:"snapshotFinished,omitempty"`
 }
 
 //+kubebuilder:object:root=true
