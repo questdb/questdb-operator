@@ -118,7 +118,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		})
 
 		It("should report the phase of the latest snapshot", func() {
-			By("Getting the latest snapshot by using the current time")
+			By("Getting the latest snapshot by using the current frozen time")
 			snap := &crdv1beta1.QuestDBSnapshot{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      sched.Name + "-" + timeSource.Now().Format("20060102150405"),
@@ -132,14 +132,14 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 				g.Expect(snap.Status.Phase).To(Equal(crdv1beta1.SnapshotFailed))
 			}, timeout, interval).Should(Succeed())
 
-			By("Setting the snapshot to succeeded (different status than the first status)")
+			By("Setting the snapshot to succeeded (different status than the first snapshot, which is Failed)")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(snap), snap)).To(Succeed())
 				snap.Status.Phase = crdv1beta1.SnapshotSucceeded
 				g.Expect(k8sClient.Status().Update(ctx, snap)).Should(Succeed())
 			}, timeout, interval).Should(Succeed())
 
-			By("Advancing time a few milliseconds to prevent another reconcile")
+			By("Advancing time a few milliseconds to prevent another snapshot from being created in the next reconcile")
 			advanceTime(timeSource, time.Millisecond*5)
 
 			By("Reconciling the schedule")
@@ -148,7 +148,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			})
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Checking that the schedule status has been updated")
+			By("Checking that the schedule status has been updated to match the latest snapshot")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sched), sched)).To(Succeed())
 			Expect(sched.Status.SnapshotPhase).To(Equal(crdv1beta1.SnapshotSucceeded))
 		})
@@ -173,7 +173,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 				}
 			}, timeout, interval).Should(Succeed())
 
-			By("Advancing time a few milliseconds to avoid creating a new snapshot")
+			By("Advancing time a few milliseconds to avoid creating a new snapshot on reconcile")
 			advanceTime(timeSource, 5*time.Millisecond)
 
 			By("Forcing a reconcile")
@@ -258,7 +258,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			g.Expect(k8sClient.Update(ctx, snap)).Should(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		By("Advancing time just before the next minute to not create a new snapshot")
+		By("Advancing time just before the next minute to not create a new snapshot on reconcile")
 		advanceJustBeforeTheNextMinute(timeSource)
 
 		By("Forcing a reconcile")
@@ -346,7 +346,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 			}
 		}, timeout, interval).Should(Succeed())
 
-		By("Set (retention + 1) snapshots to succeeded")
+		By("Set (retention + 1) snapshots to succeeded, which should force the reconciler to delete one of them")
 		for idx := range snapList.Items {
 			if idx < int(retention+1) {
 				Eventually(func(g Gomega) {
@@ -369,7 +369,7 @@ var _ = Describe("QuestDBSnapshotSchedule Controller", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Checking that one snapshot has a status of succeeded and a non-nil deletion timestamp")
-		// Since they all still have finalizers (because we directly transi), the snapshot won't actually be deleted
+		// Since they all still have finalizers, the snapshot won't actually be deleted
 		Expect(k8sClient.List(ctx, snapList, client.InNamespace(sched.Namespace))).Should(Succeed())
 		var foundDeletedSnap bool
 		for _, snap := range snapList.Items {
