@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: questdb/questdb-operator
-  newTag: 0.1.2
+  newTag: 0.3.0
