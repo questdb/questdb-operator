@@ -199,17 +199,13 @@ func (r *QuestDBSnapshotScheduleReconciler) garbageCollect(ctx context.Context, 
 		successCount int32
 	)
 
-	if len(s.Items) == 0 {
-		return nil
-	}
-
 	for _, snap := range s.Items {
 		if snap.Status.Phase == crdv1beta1.SnapshotSucceeded {
 			successCount++
 		}
 
 		// Delete snapshots that are older than the retention
-		if successCount >= retention && snap.Status.Phase == crdv1beta1.SnapshotSucceeded {
+		if successCount > retention && snap.Status.Phase == crdv1beta1.SnapshotSucceeded {
 			if err = r.Delete(ctx, &snap); err != nil {
 				return err
 			}
