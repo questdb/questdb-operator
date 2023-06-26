@@ -19,12 +19,11 @@ package controller
 import (
 	"context"
 	"fmt"
-	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -67,16 +66,6 @@ func (r *QuestDBSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Try to get the object we are reconciling.  Exit if it does not exist
 	if err = r.Get(ctx, req.NamespacedName, snap); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-
-	// Handle finalizer.  This will ensure that the "SNAPSHOT COMPLETE;" is run before the snapshot is deleted
-	if finalizerResult, err := r.handleFinalizer(ctx, snap); err != nil {
-		return finalizerResult, err
-	}
-
-	// Check if the snapshot is being deleted
-	if !snap.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, nil
 	}
 
 	// Set default value for job backoff limit in case it is not set
@@ -227,127 +216,23 @@ func (r *QuestDBSnapshotReconciler) buildVolumeSnapshot(snap *crdv1beta1.QuestDB
 
 }
 
-// handleFinalizer is guaranteed to run before any other reconciliation logic
-func (r *QuestDBSnapshotReconciler) handleFinalizer(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
-	var err error
-
-	if snap.DeletionTimestamp.IsZero() {
-		// If we are not deleting the Snapshot, ensure that the finalizer exists
-
-		if !controllerutil.ContainsFinalizer(snap, crdv1beta1.QuestDBSnapshotFinalizer) {
-			controllerutil.AddFinalizer(snap, crdv1beta1.QuestDBSnapshotFinalizer)
-			if err := r.Update(ctx, snap); err != nil {
+func (r *QuestDBSnapshotReconciler) handlePhaseEmpty(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
+	// Check that the QuestDB exists
+	qdb := &crdv1beta1.QuestDB{}
+	namespacedName := types.NamespacedName{Namespace: snap.Namespace, Name: snap.Spec.QuestDBName}
+	err := r.Get(ctx, namespacedName, qdb)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			snap.Status.Phase = crdv1beta1.SnapshotFailed
+			err := r.Status().Update(ctx, snap)
+			if err != nil {
 				return ctrl.Result{}, err
 			}
-		}
-	} else {
-
-		if controllerutil.ContainsFinalizer(snap, crdv1beta1.QuestDBSnapshotFinalizer) {
-			switch snap.Status.Phase {
-			case crdv1beta1.SnapshotPending:
-				// Check the status of the pre-snapshot job
-				job := &batchv1.Job{}
-				err = r.Get(ctx,
-					client.ObjectKey{
-						Name:      fmt.Sprintf("%s-pre-snapshot", snap.Name),
-						Namespace: snap.Namespace,
-					}, job)
-				if err != nil {
-					return ctrl.Result{}, err
-				}
-
-				// If the job has succeeded, we need to finalize the snapshot
-				// So we kick kick off the post-snapshot job by setting the phase
-				// to finalizing, handling that state, and eventually requeueing the request
-				if job.Status.Succeeded == 1 {
-					snap.Status.Phase = crdv1beta1.SnapshotFinalizing
-					err = r.Status().Update(ctx, snap)
-					if err != nil {
-						return ctrl.Result{}, err
-					}
-					r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotFinalizing", "Running 'SNAPSHOT COMPLETE;' for snapshot %s", snap.Name)
-
-					return r.handlePhaseFinalizing(ctx, snap)
-				}
-
-				// If the job is active, we need to wait until it is not
-				if job.Status.Active == 1 {
-					return ctrl.Result{RequeueAfter: 1 * time.Second}, nil
-				}
-
-				// If the job is not active, but there are still more attempts, we need to requeue
-				// until either the job has succeeded, or we hit the maximum number of attempts
-				if job.Status.Active == 0 && job.Status.Failed < snap.Spec.JobBackoffLimit {
-					return ctrl.Result{RequeueAfter: 4 * time.Second}, nil
-				}
-
-				// If we've reached the maximum number of attempts, fail the snapshot
-				if job.Status.Failed >= snap.Spec.JobBackoffLimit {
-					snap.Status.Phase = crdv1beta1.SnapshotFailed
-					err = r.Status().Update(ctx, snap)
-					r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotFailed", "Error running 'SNAPSHOT PREPARE' in job %s", job.Name)
-				}
-
-				return ctrl.Result{}, err
-
-			case crdv1beta1.SnapshotRunning:
-				// Wait for the snapshot to finish. This will eventually progress the phase to
-				// finalizing, at which point we will continue with the logic below
-				return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-			case crdv1beta1.SnapshotFinalizing:
-				// Check the status of the post-snapshot job
-				job := &batchv1.Job{}
-				err = r.Get(ctx,
-					client.ObjectKey{
-						Name:      fmt.Sprintf("%s-post-snapshot", snap.Name),
-						Namespace: snap.Namespace,
-					}, job)
-				if err != nil {
-					return ctrl.Result{}, err
-				}
-
-				// If the job has succeeded, we can safely delete the snapshot
-				if job.Status.Succeeded == 1 {
-					controllerutil.RemoveFinalizer(snap, crdv1beta1.QuestDBSnapshotFinalizer)
-					return ctrl.Result{}, r.Update(ctx, snap)
-				}
-
-				// If the job is active, we need to wait until it is not
-				if job.Status.Active == 1 {
-					return ctrl.Result{RequeueAfter: 1 * time.Second}, nil
-				}
-
-				// If the job is not active, but there are still more attempts, we need to requeue
-				if job.Status.Active == 0 && job.Status.Failed < snap.Spec.JobBackoffLimit {
-					return ctrl.Result{RequeueAfter: 4 * time.Second}, nil
-				}
-
-				// If we've reached the maximum number of attempts, fail the snapshot
-				if job.Status.Failed >= snap.Spec.JobBackoffLimit {
-					snap.Status.Phase = crdv1beta1.SnapshotFailed
-					err = r.Status().Update(ctx, snap)
-					r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotFailed", "Error running 'SNAPSHOT COMPLETE' in job %s", job.Name)
-				}
-
-				return ctrl.Result{}, err
-
-			// If the snapshot succeeded, we can safely delete the snapshot
-			case crdv1beta1.SnapshotSucceeded:
-				controllerutil.RemoveFinalizer(snap, crdv1beta1.QuestDBSnapshotFinalizer)
-				return ctrl.Result{}, r.Update(ctx, snap)
-
-			// If the snapshot failed, we should let the user investigate the failure, forcing them
-			// to manually delete the finalizer once they're comfortable
-			case crdv1beta1.SnapshotFailed:
-				return ctrl.Result{}, nil
-			}
+			r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotFailed", "QuestDB %q not found", namespacedName)
+			return ctrl.Result{}, nil
 		}
 	}
 
-	return ctrl.Result{}, nil
-}
-
-func (r *QuestDBSnapshotReconciler) handlePhaseEmpty(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
 	// Set the phase to pending
 	snap.Status.Phase = crdv1beta1.SnapshotPending
 	if err := r.Status().Update(ctx, snap); err != nil {
@@ -363,7 +248,7 @@ func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap
 		volSnapClass := &volumesnapshotv1.VolumeSnapshotClass{}
 		err := r.Get(ctx, client.ObjectKey{Name: *snap.Spec.VolumeSnapshotClassName}, volSnapClass)
 		if err != nil {
-			// If the volume snapshot class does not exist, finalize and then fail the snapshot
+			// If the volume snapshot class does not exist, fail the snapshot
 			if apierrors.IsNotFound(err) {
 				snap.Status.Phase = crdv1beta1.SnapshotFailed
 				err = r.Status().Update(ctx, snap)
@@ -373,32 +258,7 @@ func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap
 		}
 	}
 
-	// Add the snapshot protection finalizer to the questdb
-	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-
-		questdb := &crdv1beta1.QuestDB{}
-		err := r.Get(ctx, client.ObjectKey{Name: snap.Spec.QuestDBName, Namespace: snap.Namespace}, questdb)
-		if err != nil {
-			// Fail the snapshot if the questdb is not found
-			if apierrors.IsNotFound(err) {
-				snap.Status.Phase = crdv1beta1.SnapshotFailed
-				err = r.Status().Update(ctx, snap)
-				r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotFailed", "QuestDB %s not found", snap.Spec.QuestDBName)
-			}
-			return err
-		}
-		if !controllerutil.ContainsFinalizer(questdb, crdv1beta1.QuestDBSnapshotProtectionFinalizer) {
-			controllerutil.AddFinalizer(questdb, crdv1beta1.QuestDBSnapshotProtectionFinalizer)
-			err = r.Update(ctx, questdb)
-		}
-		return err
-	})
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
 	// Create the pre-snapshot job
-	r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotPending", "Running 'SNAPSHOT PREPARE;' for snapshot %s", snap.Name)
 	job, err := r.buildPreSnapshotJob(ctx, snap)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -408,18 +268,40 @@ func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap
 			err = r.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, &job)
 		}
 		if err != nil {
+			r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotPending", "Error running 'SNAPSHOT PREPARE' job: %s", err.Error())
 			return ctrl.Result{}, err
 		}
+		r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotPending", "Running 'SNAPSHOT PREPARE;' for snapshot %s", snap.Name)
 	}
 
 	// Check if the pre-snapshot job is complete
 	if job.Status.Succeeded == 1 {
-		// Set the phase to running
+
+		// Add the SnapshotCompleteFinalizer
+		if !controllerutil.ContainsFinalizer(snap, crdv1beta1.SnapshotCompleteFinalizer) {
+			controllerutil.AddFinalizer(snap, crdv1beta1.SnapshotCompleteFinalizer)
+			err = r.Update(ctx, snap)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+
+		// Set the phase to running, unless the snapshot is marked for deletion, in which case jump straight to finalizing
 		snap.Status.Phase = crdv1beta1.SnapshotRunning
+		if snap.DeletionTimestamp != nil {
+			snap.Status.Phase = crdv1beta1.SnapshotFinalizing
+		}
+
 		if err = r.Status().Update(ctx, snap); err != nil {
 			return ctrl.Result{}, err
 		}
-		r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotRunning", "Snapshot %s is running", snap.Name)
+
+		if snap.DeletionTimestamp == nil {
+			r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotRunning", "Snapshot %s is running", snap.Name)
+		} else {
+			r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotFinalizing", "Snapshot %s is finalizing", snap.Name)
+		}
+
 	}
 
 	// If we've reached the maximum number of attempts, fail the snapshot
@@ -465,7 +347,7 @@ func (r *QuestDBSnapshotReconciler) handlePhaseRunning(ctx context.Context, snap
 
 func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
 
-	// Create the pre-snapshot job
+	// Create the post-snapshot job
 	job, err := r.buildPostSnapshotJob(ctx, snap)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -481,7 +363,7 @@ func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, s
 
 	// Check if the post-snapshot job is complete
 	if job.Status.Succeeded == 1 {
-		// Set the phase to running
+		// Set the phase to succeeded
 		snap.Status.Phase = crdv1beta1.SnapshotSucceeded
 		if err = r.Status().Update(ctx, snap); err != nil {
 			return ctrl.Result{}, err
@@ -502,33 +384,30 @@ func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, s
 		return ctrl.Result{}, err
 	}
 
-	// If everything is good, remove the snapshot protection finalizer from the questdb
-	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		questdb := &crdv1beta1.QuestDB{}
-		err = r.Get(ctx, client.ObjectKey{Name: snap.Spec.QuestDBName, Namespace: snap.Namespace}, questdb)
-		if err != nil {
-			return err
-		}
-		if controllerutil.ContainsFinalizer(questdb, crdv1beta1.QuestDBSnapshotProtectionFinalizer) {
-			controllerutil.RemoveFinalizer(questdb, crdv1beta1.QuestDBSnapshotProtectionFinalizer)
-			err = r.Update(ctx, questdb)
-		}
-
-		return err
-	})
-
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
 	return ctrl.Result{}, err
 }
 
 func (r *QuestDBSnapshotReconciler) handlePhaseFailed(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
-	return ctrl.Result{}, nil
+	var err error
+	// Remove the SnapshotCompleteFinalizer
+	if controllerutil.ContainsFinalizer(snap, crdv1beta1.SnapshotCompleteFinalizer) {
+		controllerutil.RemoveFinalizer(snap, crdv1beta1.SnapshotCompleteFinalizer)
+		err = r.Update(ctx, snap)
+	}
+	return ctrl.Result{}, err
 }
 
 func (r *QuestDBSnapshotReconciler) handlePhaseSucceeded(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
+	var err error
+	// Remove the SnapshotCompleteFinalizer
+	if controllerutil.ContainsFinalizer(snap, crdv1beta1.SnapshotCompleteFinalizer) {
+		controllerutil.RemoveFinalizer(snap, crdv1beta1.SnapshotCompleteFinalizer)
+		err = r.Update(ctx, snap)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	// Delete the pre and post snapshot jobs
 	job := &batchv1.Job{}
 	for _, jobName := range []string{fmt.Sprintf("%s-pre-snapshot", snap.Name), fmt.Sprintf("%s-post-snapshot", snap.Name)} {
@@ -546,5 +425,6 @@ func (r *QuestDBSnapshotReconciler) handlePhaseSucceeded(ctx context.Context, sn
 			return ctrl.Result{}, client.IgnoreNotFound(err)
 		}
 	}
+
 	return ctrl.Result{}, nil
 }

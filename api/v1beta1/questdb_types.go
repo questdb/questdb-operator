@@ -23,9 +23,8 @@ import (
 )
 
 const (
-	QuestDBSnapshotProtectionFinalizer = "questdb.crd.questdb.io/snapshot-protection-finalizer"
-	AnnotationQuestDBName              = "questdb.crd.questdb.io/name"
-	AnnotationQuestDBSecretType        = "questdb.crd.questdb.io/secret-type"
+	AnnotationQuestDBName       = "questdb.crd.questdb.io/name"
+	AnnotationQuestDBSecretType = "questdb.crd.questdb.io/secret-type"
 )
 
 type QuestDBResourcesSpec struct {

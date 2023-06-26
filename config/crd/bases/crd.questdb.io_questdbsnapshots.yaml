@@ -60,12 +60,6 @@ spec:
             properties:
               phase:
                 type: string
-              snapshotFinished:
-                format: date-time
-                type: string
-              snapshotStarted:
-                format: date-time
-                type: string
             type: object
         type: object
     served: true

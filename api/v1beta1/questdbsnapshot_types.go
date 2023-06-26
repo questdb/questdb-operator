@@ -36,7 +36,7 @@ const (
 )
 
 const (
-	QuestDBSnapshotFinalizer = "questdbsnapshot.crd.questdb.io/finalizer"
+	SnapshotCompleteFinalizer = "questdbsnapshot.crd.questdb.io/snapshot-complete-finalizer"
 )
 
 // QuestDBSnapshotSpec defines the desired state of QuestDBSnapshot
@@ -48,9 +48,7 @@ type QuestDBSnapshotSpec struct {
 
 // QuestDBSnapshotStatus defines the observed state of QuestDBSnapshot
 type QuestDBSnapshotStatus struct {
-	Phase            QuestDBSnapshotPhase `json:"phase,omitempty"`
-	SnapshotStarted  metav1.Time          `json:"snapshotStarted,omitempty"`
-	SnapshotFinished metav1.Time          `json:"snapshotFinished,omitempty"`
+	Phase QuestDBSnapshotPhase `json:"phase,omitempty"`
 }
 
 //+kubebuilder:object:root=true
