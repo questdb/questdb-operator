@@ -436,7 +436,7 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 
 			})
 
-			It("Should not delete the snapshot finalizer if the snapshot is in the finalizing phase, until the post-snapshot job is complete", func() {
+			It("Should delete the snapshot finalizer if the post-snapshot job is complete", func() {
 
 				By("Setting the post-snapshot job to complete")
 				Eventually(func(g Gomega) {
@@ -455,21 +455,23 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 				}, timeout, interval).Should(Succeed())
 			})
 
-			It("Should do something if the snapshot job has failed", func() {
-				// todo: Implement this
-				Fail("Decide what to do when the post-snapshot job has failed. Delete or not delete the finalizer?")
-				By("Setting the post-snapshot failure count to the backoff limit")
+			It("Should delete the snapshot finalizer if the post-snapshot job has failed", func() {
+
+				By("Setting the post-snapshot job to complete")
 				Eventually(func(g Gomega) {
 					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job)).To(Succeed())
 					job.Status.Failed = snap.Spec.JobBackoffLimit
 					g.Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
 				}, timeout, interval).Should(Succeed())
 
-				By("Checking if the snapshot finalizer is still present")
-				Consistently(func(g Gomega) {
-					g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)).To(Succeed())
-					g.Expect(snap.Finalizers).To(ContainElement(crdv1beta1.SnapshotCompleteFinalizer))
-				}, consistencyTimeout, interval).Should(Succeed())
+				By("Checking if the snapshot finalizer is removed")
+				Eventually(func(g Gomega) {
+					err := k8sClient.Get(ctx, client.ObjectKey{Name: snap.Name, Namespace: snap.Namespace}, snap)
+					if !apierrors.IsNotFound(err) {
+						g.Expect(err).To(Succeed())
+						g.Expect(snap.Finalizers).NotTo(ContainElement(crdv1beta1.SnapshotCompleteFinalizer))
+					}
+				}, timeout, interval).Should(Succeed())
 			})
 
 		})
