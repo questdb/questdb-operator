@@ -20,7 +20,7 @@ import (
 var _ = Describe("QuestDBSnapshot Controller", func() {
 	var (
 		timeout            = time.Second * 2
-		consistencyTimeout = time.Millisecond * 600
+		consistencyTimeout = time.Millisecond * 500
 		interval           = time.Millisecond * 100
 	)
 
@@ -223,9 +223,7 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 			BeforeAll(func() {
 				q = testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
 				snap = testutils.BuildAndCreateMockQuestDBSnapshot(ctx, k8sClient, q)
-			})
 
-			It("Should set the phase to SnapshotFailed", func() {
 				By("Waiting for the pre-snapshot job to be created")
 				Eventually(func() error {
 					return k8sClient.Get(ctx, client.ObjectKey{
@@ -233,7 +231,9 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 						Namespace: snap.Namespace,
 					}, job)
 				}, timeout, interval).Should(Succeed())
+			})
 
+			It("Should set the phase to SnapshotFailed", func() {
 				By("Setting the failure condition on the pre-snapshot job")
 				job.Status.Failed = snap.Spec.JobBackoffLimit
 				Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
@@ -247,6 +247,22 @@ var _ = Describe("QuestDBSnapshot Controller", func() {
 
 					g.Expect(snap.Status.Phase).Should(Equal(crdv1beta1.SnapshotFailed))
 				}, timeout, interval).Should(Succeed())
+			})
+
+			It("Should not create the snapshot finalizer", func() {
+				By("Setting the failure condition on the pre-snapshot job")
+				job.Status.Failed = snap.Spec.JobBackoffLimit
+				Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+
+				By("Ensuring that the finalizer is never created")
+				Consistently(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+						Name:      snap.Name,
+						Namespace: snap.Namespace,
+					}, snap)).Should(Succeed())
+
+					g.Expect(snap.Finalizers).Should(HaveLen(0))
+				})
 			})
 
 		})
