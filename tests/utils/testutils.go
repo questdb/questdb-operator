@@ -47,7 +47,7 @@ func BuildMockQuestDB(ctx context.Context, c client.Client) *crdv1beta1.QuestDB 
 		},
 		Spec: crdv1beta1.QuestDBSpec{
 			Volume: crdv1beta1.QuestDBVolumeSpec{
-				Size:             resource.MustParse("1Gi"),
+				Size:             resource.MustParse("10Gi"),
 				StorageClassName: pointer.String(StorageClassName),
 			},
 			Image: "questdb/questdb:latest",

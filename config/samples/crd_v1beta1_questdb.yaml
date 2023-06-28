@@ -10,5 +10,5 @@ metadata:
   name: questdb-sample
 spec:
   volume:
-    size: 1Gi
+    size: 10Gi
   image: questdb/questdb:latest

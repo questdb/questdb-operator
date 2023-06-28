@@ -18,7 +18,7 @@ import (
 var _ = Describe("QuestDB Controller", func() {
 	var (
 		timeout            = time.Second * 2
-		consistencyTimeout = time.Millisecond * 600
+		consistencyTimeout = time.Millisecond * 500
 		interval           = time.Millisecond * 100
 	)
 
@@ -37,7 +37,7 @@ var _ = Describe("QuestDB Controller", func() {
 			return k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, pvc)
 		}, timeout, interval).Should(Succeed())
 
-		Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("1Gi"))
+		Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("10Gi"))
 
 		By("Updating the QuestDB spec")
 		Eventually(func(g Gomega) {
@@ -51,6 +51,33 @@ var _ = Describe("QuestDB Controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, pvc)).To(Succeed())
 			g.Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("2Gi"))
 		}, timeout, interval).Should(Succeed())
+
+	})
+
+	It("should prevent PVC size from shrinking", func() {
+		By("Creating a new QuestDB")
+		q := testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
+
+		By("Verifying the pvc has been created")
+		pvc := &v1.PersistentVolumeClaim{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, pvc)
+		}, timeout, interval).Should(Succeed())
+
+		Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("10Gi"))
+
+		By("Updating the QuestDB spec")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
+			q.Spec.Volume.Size = resource.MustParse("2Gi")
+			g.Expect(k8sClient.Update(ctx, q)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		By("Verifying the pvc has not been resized")
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, pvc)).To(Succeed())
+			g.Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("10Gi"))
+		}, consistencyTimeout, interval).Should(Succeed())
 
 	})
 
@@ -125,6 +152,61 @@ var _ = Describe("QuestDB Controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).To(Succeed())
 			g.Expect(sts.Annotations).To(HaveKeyWithValue("foo", "bar"))
 		}, consistencyTimeout, interval).Should(Succeed())
+
+	})
+
+	It("should update the statefulset on image change", func() {
+		By("Creating a new QuestDB")
+		q := testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
+
+		By("Verifying the statefulset has been created")
+		sts := &appsv1.StatefulSet{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)
+		}, timeout, interval).Should(Succeed())
+
+		By("Changing the image")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
+			q.Spec.Image = "questdb/questdb:a.b.c"
+			g.Expect(k8sClient.Update(ctx, q)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		By("Verifying the statefulset has been updated")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).To(Succeed())
+			g.Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("questdb/questdb:a.b.c"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("should update the readyreplicas status on the questdb", func() {
+		By("Creating a new QuestDB")
+		q := testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
+
+		By("Verifying the readyreplicas status is 0")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
+			g.Expect(q.Status.StatefulSetReadyReplicas).To(Equal(0))
+		}, timeout, interval).Should(Succeed())
+
+		By("Getting the statefulset")
+		sts := &appsv1.StatefulSet{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)
+		}, timeout, interval).Should(Succeed())
+
+		By("Updating the statefulset status's readyreplicas to 1")
+		Eventually(func(g Gomega) {
+			sts.Status.Replicas = 1
+			sts.Status.ReadyReplicas = 1
+			g.Expect(k8sClient.Status().Update(ctx, sts)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		By("Verifying the readyreplicas status is 1")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
+			g.Expect(q.Status.StatefulSetReadyReplicas).To(Equal(1))
+		}, timeout, interval).Should(Succeed())
 
 	})
 

@@ -24,7 +24,7 @@ var _ = Describe("QuestDB Webhook", func() {
 			Spec: QuestDBSpec{
 				Image: "questdb/questdb:latest",
 				Volume: QuestDBVolumeSpec{
-					Size: resource.MustParse("1Gi"),
+					Size: resource.MustParse("10Gi"),
 				},
 			},
 		}

@@ -10,6 +10,6 @@ metadata:
   name: questdb-sample-from-snapshot
 spec:
   volume:
-    size: 1Gi
+    size: 10Gi
     snapshotName: questdbsnapshot-sample
   image: questdb/questdb:latest
