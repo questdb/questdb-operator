@@ -264,6 +264,9 @@ func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap
 		return ctrl.Result{}, err
 	}
 	if err = r.Create(ctx, &job); err != nil {
+		if err == nil {
+			r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotPending", "Running 'SNAPSHOT PREPARE;' for snapshot %s", snap.Name)
+		}
 		if apierrors.IsAlreadyExists(err) {
 			err = r.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, &job)
 		}
@@ -271,7 +274,7 @@ func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap
 			r.Recorder.Eventf(snap, v1.EventTypeWarning, "SnapshotPending", "Error running 'SNAPSHOT PREPARE' job: %s", err.Error())
 			return ctrl.Result{}, err
 		}
-		r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotPending", "Running 'SNAPSHOT PREPARE;' for snapshot %s", snap.Name)
+
 	}
 
 	// Check if the pre-snapshot job is complete
@@ -337,8 +340,6 @@ func (r *QuestDBSnapshotReconciler) handlePhaseRunning(ctx context.Context, snap
 		if err = r.Status().Update(ctx, snap); err != nil {
 			return ctrl.Result{}, err
 		}
-		r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotFinalizing", "Running 'SNAPSHOT COMPLETE;' for snapshot %s", snap.Name)
-
 	}
 
 	return ctrl.Result{}, nil
@@ -353,6 +354,9 @@ func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, s
 		return ctrl.Result{}, err
 	}
 	if err = r.Create(ctx, &job); err != nil {
+		if err == nil {
+			r.Recorder.Eventf(snap, v1.EventTypeNormal, "SnapshotFinalizing", "Running 'SNAPSHOT COMPLETE;' for snapshot %s", snap.Name)
+		}
 		if apierrors.IsAlreadyExists(err) {
 			err = r.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, &job)
 		}
