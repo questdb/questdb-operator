@@ -44,11 +44,13 @@ annotations:
   questdb.crd.questdb.io/secret-type: psql
 ```
 
-The ILP Secret must contain an `auth.json` key that contains your JWK used for ILP authentication. This will be mounted to the database container as a file and referenced by the database.
+The ILP Secret must contain an `auth.json` key that contains your JWK's public key used for ILP authentication. This will be mounted to the database container as a file and referenced by the database.
 
 The PSQL Secret must contain the `QDB_PG_USER` and `QDB_PG_PASSWORD` keys. These will be mounted to the container as environment variables. Be sure not to overwrite these in `questdb.spec.extraEnv`, as this can cause unexpected behavior, and add-ons like snapshots will likely break.
 
-See the [yaml examples](config/samples/secrets.yaml) for more information
+See the [yaml examples](config/samples/secrets.yaml) for more information.
+
+Also see the [QuestDB ILP Auth documentation](https://questdb.io/docs/reference/api/ilp/authenticate/) for examples on how to generate a public/private keypair.
 
 ## Getting Started
 You’ll need a Kubernetes cluster to run against. You can use [KIND](https://sigs.k8s.io/kind) to get a local cluster for testing, or run against a remote cluster.
