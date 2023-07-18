@@ -5,6 +5,9 @@
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 VERSION ?= 0.4.0
 
+# DOCKER is the executable used to run docker commands. Also supports podman
+DOCKER ?= docker
+
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
 # To re-generate a bundle for other specific channels without changing the standard setup, you can:
@@ -139,11 +142,11 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
-	docker build -t ${IMG} .
+	$(DOCKER) build -t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
-	docker push ${IMG}
+	$(DOCKER) push ${IMG}
 
 # PLATFORMS defines the target platforms for  the manager image be build to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
@@ -156,10 +159,10 @@ PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 docker-buildx: test ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
-	- docker buildx create --name project-v3-builder
-	docker buildx use project-v3-builder
-	- docker buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
-	- docker buildx rm project-v3-builder
+	- $(DOCKER) buildx create --name project-v3-builder
+	$(DOCKER) buildx use project-v3-builder
+	- $(DOCKER) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	- $(DOCKER) buildx rm project-v3-builder
 	rm Dockerfile.cross
 
 ##@ Deployment
@@ -239,7 +242,7 @@ bundle: manifests kustomize ## Generate bundle manifests and metadata, then vali
 
 .PHONY: bundle-build
 bundle-build: ## Build the bundle image.
-	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	$(DOCKER) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
@@ -279,7 +282,7 @@ endif
 # https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
 .PHONY: catalog-build
 catalog-build: opm ## Build a catalog image.
-	$(OPM) index add --container-tool docker --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
+	$(OPM) index add --container-tool $(DOCKER) --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
 
 
 KIND_CLUSTER ?= questdb-operator
@@ -303,9 +306,15 @@ $(KIND): $(LOCALBIN)
 kind-create: kind docker-build download-test-crds
 	$(KIND) create cluster --name $(KIND_CLUSTER)
 
+# https://github.com/kubernetes-sigs/kind/issues/2729 for why we save image and then load the archive instead
+# of loading directly from the local repo. But the pipe functionality doesn't work because of
+# https://github.com/kubernetes-sigs/kind/pull/2041, so we need to store the image locally
 .PHONY: kind-provision
 kind-provision: kind kind-create docker-build download-test-crds
-	$(KIND) load docker-image $(IMG) --name $(KIND_CLUSTER)
+	mkdir -p ./tmp
+	$(DOCKER) save $(IMG) -o ./tmp/img
+	$(KIND) load image-archive --name $(KIND_CLUSTER) ./tmp/img
+	rm ./tmp/img
 	kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.12.0/cert-manager.yaml
 	kubectl apply -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshotclasses.yaml
 	kubectl apply -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshotcontents.yaml

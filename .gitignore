@@ -26,3 +26,6 @@ Dockerfile.cross
 *~
 .vscode
 __debug_bin
+
+# tmp dir to store build & test artifacts
+./tmp
