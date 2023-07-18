@@ -351,6 +351,8 @@ func (r *QuestDBReconciler) buildService(q *crdv1beta1.QuestDB) v1.Service {
 	return svc
 }
 
+// todo: add headless service?
+
 func (r *QuestDBReconciler) reconcileService(ctx context.Context, q *crdv1beta1.QuestDB) error {
 	var (
 		err error

@@ -69,6 +69,7 @@ func (r *QuestDBSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Set default value for job backoff limit in case it is not set
+	// This should not happen because it is set in the defaulting webhook
 	if snap.Spec.JobBackoffLimit == 0 {
 		snap.Spec.JobBackoffLimit = crdv1beta1.JobBackoffLimitDefault
 		err = r.Update(ctx, snap)
@@ -217,7 +218,7 @@ func (r *QuestDBSnapshotReconciler) buildVolumeSnapshot(snap *crdv1beta1.QuestDB
 }
 
 func (r *QuestDBSnapshotReconciler) handlePhaseEmpty(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
-	// Check that the QuestDB exists
+	// Check that the QuestDB exists before starting the snapshot process
 	qdb := &crdv1beta1.QuestDB{}
 	namespacedName := types.NamespacedName{Namespace: snap.Namespace, Name: snap.Spec.QuestDBName}
 	err := r.Get(ctx, namespacedName, qdb)
@@ -257,6 +258,9 @@ func (r *QuestDBSnapshotReconciler) handlePhasePending(ctx context.Context, snap
 			return ctrl.Result{}, err
 		}
 	}
+
+	// todo: if no volume snapshot class is specified, check that there is a default one in the cluster
+	// if a default is not found, then fail the snapshot
 
 	// Create the pre-snapshot job
 	job, err := r.buildPreSnapshotJob(ctx, snap)
@@ -388,20 +392,27 @@ func (r *QuestDBSnapshotReconciler) handlePhaseFinalizing(ctx context.Context, s
 }
 
 func (r *QuestDBSnapshotReconciler) handlePhaseFailed(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
-	var err error
+	var (
+		err     error
+		updated bool
+	)
+
 	// Remove the SnapshotCompleteFinalizer
-	if controllerutil.ContainsFinalizer(snap, crdv1beta1.SnapshotCompleteFinalizer) {
-		controllerutil.RemoveFinalizer(snap, crdv1beta1.SnapshotCompleteFinalizer)
+	updated = controllerutil.RemoveFinalizer(snap, crdv1beta1.SnapshotCompleteFinalizer)
+	if updated {
 		err = r.Update(ctx, snap)
 	}
 	return ctrl.Result{}, err
 }
 
 func (r *QuestDBSnapshotReconciler) handlePhaseSucceeded(ctx context.Context, snap *crdv1beta1.QuestDBSnapshot) (ctrl.Result, error) {
-	var err error
+	var (
+		err     error
+		updated bool
+	)
 	// Remove the SnapshotCompleteFinalizer
-	if controllerutil.ContainsFinalizer(snap, crdv1beta1.SnapshotCompleteFinalizer) {
-		controllerutil.RemoveFinalizer(snap, crdv1beta1.SnapshotCompleteFinalizer)
+	updated = controllerutil.RemoveFinalizer(snap, crdv1beta1.SnapshotCompleteFinalizer)
+	if updated {
 		err = r.Update(ctx, snap)
 		if err != nil {
 			return ctrl.Result{}, err
