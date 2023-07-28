@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -177,6 +178,55 @@ var _ = Describe("QuestDB Controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).To(Succeed())
 			g.Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("questdb/questdb:a.b.c"))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	Context("pgauth updates", Ordered, func() {
+		var (
+			secretName = "test-secret"
+			q          = &crdv1beta1.QuestDB{}
+		)
+
+		BeforeAll(func() {
+			By("Creating a new QuestDB")
+			q = testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
+		})
+
+		It("should update the statefulset when new pg auth secret is created", func() {
+
+			By("Verifying the statefulset has been created")
+			sts := &appsv1.StatefulSet{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)
+			}, timeout, interval).Should(Succeed())
+
+			By("Adding the secret")
+			Eventually(func(g Gomega) {
+				s := &v1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      secretName,
+						Namespace: q.Namespace,
+						Annotations: map[string]string{
+							crdv1beta1.AnnotationQuestDBName:       q.Name,
+							crdv1beta1.AnnotationQuestDBSecretType: "psql",
+						},
+					},
+					StringData: map[string]string{
+						"QDB_PG_USER":     "test-username",
+						"QDB_PG_PASSWORD": "test-password",
+					},
+				}
+				Expect(k8sClient.Create(ctx, s)).Should(Succeed())
+
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying the statefulset has been updated")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).To(Succeed())
+				g.Expect(sts.Spec.Template.Spec.Containers[0].EnvFrom).Should(HaveLen(1))
+				g.Expect(sts.Spec.Template.Spec.Containers[0].EnvFrom[0].SecretRef).ShouldNot(BeNil())
+				g.Expect(sts.Spec.Template.Spec.Containers[0].EnvFrom[0].SecretRef.Name).Should(Equal(secretName))
+			}, timeout, interval).Should(Succeed())
+		})
 	})
 
 	It("should update the readyreplicas status on the questdb", func() {
