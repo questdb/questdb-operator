@@ -4,6 +4,9 @@ The QuestDB Operator is a group of controllers and webhooks that are designed to
 
 ## Description
 
+### Custom Resource Definitions
+Click [here](./docs.md) for the documentation of the Custom Resource Definitions included in this operator.
+
 ### Prerequisites
 
 The QuestDB resource type should be compatible with mainstream Kubernetes distributions, since it orchestrates `v1` and `apps/v1` components like PersistentVolumeClaims, StatefulSets, Services, and ConfigMaps.

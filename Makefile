@@ -104,6 +104,10 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+.PHONY: docs
+docs: crd-ref-docs
+	$(CRD_REF_DOCS) --source-path api/v1beta1 --config=docconfig.yaml --renderer=markdown --output-path docs.md
+
 .PHONY: download-test-crds
 download-test-crds:
 	@if ! test -f $(TEST_CRD_DIR)/snapshot.storage.k8s.io_volumesnapshotclasses.yaml ; then \
@@ -201,6 +205,7 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GINKGO ?= $(LOCALBIN)/ginkgo
 KIND ?= $(LOCALBIN)/kind
+CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.7
@@ -232,6 +237,11 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+
+.PHONY:
+crd-ref-docs: $(CRD_REF_DOCS)
+$(CRD_REF_DOCS): $(LOCALBIN)
+	test -s $(LOCALBIN)/crd-ref-docs || GOBIN=$(LOCALBIN) go install github.com/elastic/crd-ref-docs@latest
 
 .PHONY: bundle
 bundle: manifests kustomize ## Generate bundle manifests and metadata, then validate generated files.
