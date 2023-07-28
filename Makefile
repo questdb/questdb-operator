@@ -121,7 +121,7 @@ download-test-crds:
 	fi
 
 .PHONY: test
-test: ginkgo download-test-crds manifests generate fmt vet envtest ## Run tests.
+test: ginkgo download-test-crds manifests generate fmt vet envtest docs ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GINKGO) -cover -coverprofile=cover.out ./api/... ./internal/...  && go tool cover -func=cover.out
 
 .PHONY: integration-test

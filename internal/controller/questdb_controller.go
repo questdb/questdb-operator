@@ -27,8 +27,12 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 	"github.com/questdb/questdb-operator/internal/secrets"
@@ -108,6 +112,11 @@ func (r *QuestDBReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&v1.PersistentVolumeClaim{}).
 		Owns(&v1.Service{}).
 		Owns(&v1.ConfigMap{}).
+		Watches(
+			&source.Kind{Type: &v1.Secret{}},
+			handler.EnqueueRequestsFromMapFunc(secrets.CheckSecretForQdb),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
 		Complete(r)
 }
 
@@ -135,10 +144,8 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.Qu
 					Affinity: q.Spec.Affinity,
 					Containers: []v1.Container{
 						{
-							Name:  "questdb",
-							Image: q.Spec.Image,
-							//Image:           "busybox:latest",
-							//Command:         []string{"sleep", "infinity"},
+							Name:            "questdb",
+							Image:           q.Spec.Image,
 							ImagePullPolicy: q.Spec.ImagePullPolicy,
 							Env:             q.Spec.ExtraEnv,
 							Ports: []v1.ContainerPort{
@@ -270,17 +277,15 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.Qu
 
 func (r *QuestDBReconciler) reconcileStatefulSet(ctx context.Context, q *crdv1beta1.QuestDB, s secrets.QuestDBSecrets) error {
 	var (
-		err    error
-		actual = &appsv1.StatefulSet{}
+		err     error
+		actual  = &appsv1.StatefulSet{}
+		desired = r.buildStatefulSet(q, s)
 	)
 
 	if err = r.Get(ctx, client.ObjectKeyFromObject(q), actual); err != nil {
 		if client.IgnoreNotFound(err) != nil {
 			return err
 		}
-
-		desired := r.buildStatefulSet(q, s)
-
 		if err = r.Create(ctx, &desired); err != nil {
 			r.Recorder.Event(q, v1.EventTypeWarning, "StatefulSetCreateFailed", err.Error())
 			return err
@@ -291,26 +296,37 @@ func (r *QuestDBReconciler) reconcileStatefulSet(ctx context.Context, q *crdv1be
 		*actual = desired
 	}
 
+	var needsUpdate bool
+
 	// Update the StatefulSet image if needed
 	if actual.Spec.Template.Spec.Containers[0].Image != q.Spec.Image {
 		actual.Spec.Template.Spec.Containers[0].Image = q.Spec.Image
+		needsUpdate = true
+	}
+
+	// Update the StatefulSet pgauth
+	if !reflect.DeepEqual(actual.Spec.Template.Spec.Containers[0].EnvFrom, desired.Spec.Template.Spec.Containers[0].EnvFrom) {
+		actual.Spec.Template.Spec.Containers[0].EnvFrom = desired.Spec.Template.Spec.Containers[0].EnvFrom
+		needsUpdate = true
+	}
+
+	if needsUpdate {
 		if err = r.Update(ctx, actual); err != nil {
 			r.Recorder.Event(q, v1.EventTypeWarning, "StatefulSetUpdateFailed", err.Error())
 			return err
 		}
-
 		r.Recorder.Event(q, v1.EventTypeNormal, "StatefulSetUpdated", "StatefulSet updated")
 	}
+
+	// Status updates below
 
 	// Update the StatefulSetPodsReady status
 	if actual.Status.ReadyReplicas != int32(q.Status.StatefulSetReadyReplicas) {
 		q.Status.StatefulSetReadyReplicas = int(actual.Status.ReadyReplicas)
-		if err = r.Status().Update(ctx, q); err != nil {
-			return err
-		}
+		err = r.Status().Update(ctx, q)
 	}
 
-	return nil
+	return err
 
 }
 
