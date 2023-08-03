@@ -78,11 +78,11 @@ var _ = Describe("QuestDB Webhook", func() {
 	Context("When validating QuestDB Updates", func() {
 
 		It("should accept an update with only labels changing", func() {
-			Expect(k8sClient.Create(ctx, q)).To(Succeed())
+			q.Spec.Volume.StorageClassName = pointer.String("test-storage-class")
 			q.Labels = map[string]string{
 				"test-label": "test-value",
 			}
-			Expect(k8sClient.Update(ctx, q)).To(Succeed())
+			Expect(k8sClient.Create(ctx, q)).To(Succeed())
 
 			q.Labels["another-label"] = "another-value"
 			Expect(k8sClient.Update(ctx, q)).To(Succeed())
