@@ -140,7 +140,7 @@ func (r *QuestDB) ValidateUpdate(old runtime.Object) error {
 	}
 
 	// Also check if there was a volume selector in the first place
-	if reflect.ValueOf(r.Spec.Volume.Selector) != reflect.ValueOf(oldQdb.Spec.Volume.Selector) {
+	if !reflect.DeepEqual(r.Spec.Volume.Selector, oldQdb.Spec.Volume.Selector) {
 		return errors.New("cannot change snapshot selector")
 	}
 
@@ -148,7 +148,7 @@ func (r *QuestDB) ValidateUpdate(old runtime.Object) error {
 		return errors.New("cannot change volume name")
 	}
 
-	if reflect.ValueOf(r.Spec.Volume.StorageClassName) != reflect.ValueOf(oldQdb.Spec.Volume.StorageClassName) {
+	if !reflect.DeepEqual(r.Spec.Volume.StorageClassName, oldQdb.Spec.Volume.StorageClassName) {
 		return errors.New("cannot change storage class name")
 	}
 
