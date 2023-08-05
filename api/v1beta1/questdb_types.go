@@ -52,13 +52,18 @@ type QuestDBSpec struct {
 
 	Image string `json:"image"`
 
-	Affinity         *v1.Affinity              `json:"affinity,omitempty"`
-	ExtraEnv         []v1.EnvVar               `json:"extraEnv,omitempty"`
-	ImagePullPolicy  v1.PullPolicy             `json:"imagePullPolicy,omitempty"`
-	ImagePullSecrets []v1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
-	NodeSelector     map[string]string         `json:"nodeSelector,omitempty"`
-	Resources        QuestDBResourcesSpec      `json:"resources,omitempty"`
-	Tolerations      []v1.Toleration           `json:"tolerations,omitempty"`
+	Affinity          *v1.Affinity     `json:"affinity,omitempty"`
+	ExtraEnv          []v1.EnvVar      `json:"extraEnv,omitempty"`
+	ExtraVolumeMounts []v1.VolumeMount `json:"extraVolumeMounts,omitempty"`
+	ExtraVolumes      []v1.Volume      `json:"extraVolumes,omitempty"`
+	// ImagePullPolicy defaults to IfNotPresent
+	ImagePullPolicy        v1.PullPolicy             `json:"imagePullPolicy,omitempty"`
+	ImagePullSecrets       []v1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
+	NodeSelector           map[string]string         `json:"nodeSelector,omitempty"`
+	PodAnnotations         map[string]string         `json:"podAnnotations,omitempty"`
+	Resources              QuestDBResourcesSpec      `json:"resources,omitempty"`
+	StatefulSetAnnotations map[string]string         `json:"statefulSetAnnotations,omitempty"`
+	Tolerations            []v1.Toleration           `json:"tolerations,omitempty"`
 }
 
 type QuestDBEndpointStatus struct {

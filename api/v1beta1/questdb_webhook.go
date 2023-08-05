@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"strings"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -105,6 +106,10 @@ func (r *QuestDB) ValidateCreate() error {
 
 	if err := validateVolumeSpec(r.Spec.Volume); err != nil {
 		return err
+	}
+
+	if r.Spec.ImagePullPolicy == v1.PullPolicy("") {
+		r.Spec.ImagePullPolicy = v1.PullIfNotPresent
 	}
 
 	return nil

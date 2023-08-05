@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/davecgh/go-spew/spew"
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 	"github.com/questdb/questdb-operator/internal/secrets"
 
@@ -121,12 +122,17 @@ func (r *QuestDBReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.QuestDBSecrets) appsv1.StatefulSet {
+	pullPolicy := q.Spec.ImagePullPolicy
+	if pullPolicy == v1.PullPolicy("") {
+		pullPolicy = v1.PullIfNotPresent
+	}
 
 	sts := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      q.Name,
-			Namespace: q.Namespace,
-			Labels:    q.Labels,
+			Name:        q.Name,
+			Namespace:   q.Namespace,
+			Labels:      q.Labels,
+			Annotations: q.Spec.StatefulSetAnnotations,
 		},
 		Spec: appsv1.StatefulSetSpec{
 			ServiceName: q.Name,
@@ -136,9 +142,10 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.Qu
 			},
 			Template: v1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      q.Name,
-					Namespace: q.Namespace,
-					Labels:    q.Labels,
+					Name:        q.Name,
+					Namespace:   q.Namespace,
+					Labels:      q.Labels,
+					Annotations: q.Spec.PodAnnotations,
 				},
 				Spec: v1.PodSpec{
 					Affinity: q.Spec.Affinity,
@@ -146,24 +153,28 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.Qu
 						{
 							Name:            "questdb",
 							Image:           q.Spec.Image,
-							ImagePullPolicy: q.Spec.ImagePullPolicy,
+							ImagePullPolicy: pullPolicy,
 							Env:             q.Spec.ExtraEnv,
 							Ports: []v1.ContainerPort{
 								{
 									Name:          "http",
 									ContainerPort: 9000,
+									Protocol:      v1.ProtocolTCP,
 								},
 								{
 									Name:          "psql",
 									ContainerPort: 8812,
+									Protocol:      v1.ProtocolTCP,
 								},
 								{
 									Name:          "ilp",
 									ContainerPort: 9009,
+									Protocol:      v1.ProtocolTCP,
 								},
 								{
 									Name:          "metrics",
 									ContainerPort: 9003,
+									Protocol:      v1.ProtocolTCP,
 								},
 							},
 							Resources: v1.ResourceRequirements{
@@ -175,6 +186,7 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.Qu
 								InitialDelaySeconds: 5,
 								PeriodSeconds:       10,
 								TimeoutSeconds:      2,
+								SuccessThreshold:    1,
 								ProbeHandler: v1.ProbeHandler{
 									HTTPGet: &v1.HTTPGetAction{
 										Path:   "/status",
@@ -197,7 +209,9 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.Qu
 									},
 								},
 							},
-							VolumeMounts: []v1.VolumeMount{
+							TerminationMessagePath:   "/dev/termination-log",
+							TerminationMessagePolicy: v1.TerminationMessageReadFile,
+							VolumeMounts: append([]v1.VolumeMount{
 								{
 									Name:      "data",
 									MountPath: "/var/lib/questdb/db",
@@ -206,7 +220,7 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.Qu
 									Name:      "config",
 									MountPath: "/var/lib/questdb/conf",
 								},
-							},
+							}, q.Spec.ExtraVolumeMounts...),
 						},
 					},
 					ImagePullSecrets: q.Spec.ImagePullSecrets,
@@ -215,7 +229,7 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.Qu
 						FSGroup: pointer.Int64(10001),
 					},
 					Tolerations: q.Spec.Tolerations,
-					Volumes: []v1.Volume{
+					Volumes: append([]v1.Volume{
 						{
 							Name: "data",
 							VolumeSource: v1.VolumeSource{
@@ -231,10 +245,11 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.Qu
 									LocalObjectReference: v1.LocalObjectReference{
 										Name: q.Name,
 									},
+									DefaultMode: pointer.Int32(0420),
 								},
 							},
 						},
-					},
+					}, q.Spec.ExtraVolumes...),
 				},
 			},
 		},
@@ -298,15 +313,23 @@ func (r *QuestDBReconciler) reconcileStatefulSet(ctx context.Context, q *crdv1be
 
 	var needsUpdate bool
 
-	// Update the StatefulSet image if needed
-	if actual.Spec.Template.Spec.Containers[0].Image != q.Spec.Image {
-		actual.Spec.Template.Spec.Containers[0].Image = q.Spec.Image
+	if !reflect.DeepEqual(actual.Spec.Template.ObjectMeta, desired.Spec.Template.ObjectMeta) {
+		actual.Spec.Template.ObjectMeta = desired.ObjectMeta
 		needsUpdate = true
 	}
 
-	// Update the StatefulSet pgauth
-	if !reflect.DeepEqual(actual.Spec.Template.Spec.Containers[0].EnvFrom, desired.Spec.Template.Spec.Containers[0].EnvFrom) {
-		actual.Spec.Template.Spec.Containers[0].EnvFrom = desired.Spec.Template.Spec.Containers[0].EnvFrom
+	if !reflect.DeepEqual(actual.Spec.Template.Spec.Containers, desired.Spec.Template.Spec.Containers) {
+		spew.Dump(actual.Spec.Template.Spec.Containers)
+		spew.Dump(desired.Spec.Template.Spec.Containers)
+		actual.Spec.Template.Spec.Containers = desired.Spec.Template.Spec.Containers
+		needsUpdate = true
+
+	}
+
+	if !reflect.DeepEqual(actual.Spec.Template.Spec.Volumes, desired.Spec.Template.Spec.Volumes) {
+		spew.Dump(actual.Spec.Template.Spec.Volumes)
+		spew.Dump(desired.Spec.Template.Spec.Volumes)
+		actual.Spec.Template.Spec.Volumes = desired.Spec.Template.Spec.Volumes
 		needsUpdate = true
 	}
 
@@ -317,8 +340,6 @@ func (r *QuestDBReconciler) reconcileStatefulSet(ctx context.Context, q *crdv1be
 		}
 		r.Recorder.Event(q, v1.EventTypeNormal, "StatefulSetUpdated", "StatefulSet updated")
 	}
-
-	// Status updates below
 
 	// Update the StatefulSetPodsReady status
 	if actual.Status.ReadyReplicas != int32(q.Status.StatefulSetReadyReplicas) {
