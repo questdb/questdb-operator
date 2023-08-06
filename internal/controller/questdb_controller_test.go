@@ -198,7 +198,7 @@ var _ = Describe("QuestDB Controller", func() {
 
 			By("Adding an extra volume to the QuestDB")
 			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(q), q)).To(Succeed())
 				q.Spec.ExtraVolumeMounts = append(q.Spec.ExtraVolumeMounts, v1.VolumeMount{
 					Name:      "extra-volume",
 					MountPath: "/extra",
@@ -214,16 +214,16 @@ var _ = Describe("QuestDB Controller", func() {
 
 			By("Verifying the extra volume and mount have been added")
 			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).To(Succeed())
-				Expect(sts.Spec.Template.Spec.Volumes).To(HaveLen(3))
-				Expect(sts.Spec.Template.Spec.Containers[0].VolumeMounts).To(HaveLen(3))
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(q), sts)).To(Succeed())
+				g.Expect(sts.Spec.Template.Spec.Volumes).To(HaveLen(3))
+				g.Expect(sts.Spec.Template.Spec.Containers[0].VolumeMounts).To(HaveLen(3))
 			}, timeout, interval).Should(Succeed())
 		})
 
 		It("should update the statefulset on image change", func() {
 			By("Changing the image")
 			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(q), q)).To(Succeed())
 				q.Spec.Image = "questdb/questdb:a.b.c"
 				g.Expect(k8sClient.Update(ctx, q)).To(Succeed())
 			}, timeout, interval).Should(Succeed())
