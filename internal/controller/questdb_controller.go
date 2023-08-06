@@ -34,7 +34,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/davecgh/go-spew/spew"
 	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
 	"github.com/questdb/questdb-operator/internal/secrets"
 
@@ -225,10 +224,8 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.Qu
 					},
 					ImagePullSecrets: q.Spec.ImagePullSecrets,
 					NodeSelector:     q.Spec.NodeSelector,
-					SecurityContext: &v1.PodSecurityContext{
-						FSGroup: pointer.Int64(10001),
-					},
-					Tolerations: q.Spec.Tolerations,
+					SecurityContext:  &q.Spec.PodSecurityContext,
+					Tolerations:      q.Spec.Tolerations,
 					Volumes: append([]v1.Volume{
 						{
 							Name: "data",
@@ -319,17 +316,17 @@ func (r *QuestDBReconciler) reconcileStatefulSet(ctx context.Context, q *crdv1be
 	}
 
 	if !reflect.DeepEqual(actual.Spec.Template.Spec.Containers, desired.Spec.Template.Spec.Containers) {
-		spew.Dump(actual.Spec.Template.Spec.Containers)
-		spew.Dump(desired.Spec.Template.Spec.Containers)
 		actual.Spec.Template.Spec.Containers = desired.Spec.Template.Spec.Containers
 		needsUpdate = true
-
 	}
 
 	if !reflect.DeepEqual(actual.Spec.Template.Spec.Volumes, desired.Spec.Template.Spec.Volumes) {
-		spew.Dump(actual.Spec.Template.Spec.Volumes)
-		spew.Dump(desired.Spec.Template.Spec.Volumes)
 		actual.Spec.Template.Spec.Volumes = desired.Spec.Template.Spec.Volumes
+		needsUpdate = true
+	}
+
+	if !reflect.DeepEqual(actual.Spec.Template.Spec.SecurityContext, desired.Spec.Template.Spec.SecurityContext) {
+		actual.Spec.Template.Spec.SecurityContext = desired.Spec.Template.Spec.SecurityContext
 		needsUpdate = true
 	}
 

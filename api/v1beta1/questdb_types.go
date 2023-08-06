@@ -61,6 +61,7 @@ type QuestDBSpec struct {
 	ImagePullSecrets       []v1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
 	NodeSelector           map[string]string         `json:"nodeSelector,omitempty"`
 	PodAnnotations         map[string]string         `json:"podAnnotations,omitempty"`
+	PodSecurityContext     v1.PodSecurityContext     `json:"podSecurityContext,omitempty"`
 	Resources              QuestDBResourcesSpec      `json:"resources,omitempty"`
 	StatefulSetAnnotations map[string]string         `json:"statefulSetAnnotations,omitempty"`
 	Tolerations            []v1.Toleration           `json:"tolerations,omitempty"`
