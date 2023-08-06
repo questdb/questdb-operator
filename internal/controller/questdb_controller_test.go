@@ -129,55 +129,112 @@ var _ = Describe("QuestDB Controller", func() {
 
 	})
 
-	It("should not reconcile annotations on the statefulset", func() {
-		By("Creating a new QuestDB")
-		q := testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
+	Context("statefulset updated", func() {
 
-		By("Verifying the statefulset has been created")
-		sts := &appsv1.StatefulSet{}
-		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)
-		}, timeout, interval).Should(Succeed())
+		var (
+			q   *crdv1beta1.QuestDB
+			sts *appsv1.StatefulSet
+		)
 
-		By("Verifying the statefulset has no annotations")
-		Expect(sts.Annotations).To(BeEmpty())
+		BeforeEach(func() {
+			By("Creating a new QuestDB")
+			q = testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
 
-		By("Adding an annotation to the statefulset")
-		Eventually(func(g Gomega) {
-			sts.Annotations = map[string]string{"foo": "bar"}
-			g.Expect(k8sClient.Update(ctx, sts)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+			By("Verifying the statefulset has been created")
+			sts = &appsv1.StatefulSet{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)
+			}, timeout, interval).Should(Succeed())
+		})
 
-		By("Verifying the statefulset still has the annotation")
-		Consistently(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).To(Succeed())
-			g.Expect(sts.Annotations).To(HaveKeyWithValue("foo", "bar"))
-		}, consistencyTimeout, interval).Should(Succeed())
+		It("should prevent annotation changes directly on the statefulset", func() {
+			By("Verifying the statefulset has been created")
+			sts := &appsv1.StatefulSet{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)
+			}, timeout, interval).Should(Succeed())
 
-	})
+			By("Verifying the statefulset has no annotations")
+			Expect(sts.Annotations).To(BeEmpty())
 
-	It("should update the statefulset on image change", func() {
-		By("Creating a new QuestDB")
-		q := testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
+			By("Adding an annotation directly to the statefulset")
+			Eventually(func(g Gomega) {
+				sts.Annotations = map[string]string{"foo": "bar"}
+				g.Expect(k8sClient.Update(ctx, sts)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
 
-		By("Verifying the statefulset has been created")
-		sts := &appsv1.StatefulSet{}
-		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)
-		}, timeout, interval).Should(Succeed())
+			By("Verifying the annotation has been removed")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).To(Succeed())
+				g.Expect(sts.Annotations).ToNot(HaveKeyWithValue("foo", "bar"))
+			}, timeout, interval).Should(Succeed())
 
-		By("Changing the image")
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
-			q.Spec.Image = "questdb/questdb:a.b.c"
-			g.Expect(k8sClient.Update(ctx, q)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		})
 
-		By("Verifying the statefulset has been updated")
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).To(Succeed())
-			g.Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("questdb/questdb:a.b.c"))
-		}, timeout, interval).Should(Succeed())
+		It("should update the statefulset if annotations change", func() {
+
+			By("Verifying the statefulset has no annotations")
+			Expect(sts.Annotations).To(BeEmpty())
+
+			By("Adding an annotation to the QuestDB")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
+				q.Spec.StatefulSetAnnotations = map[string]string{"foo": "bar"}
+				g.Expect(k8sClient.Update(ctx, q)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying the annotation has been added")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).To(Succeed())
+				g.Expect(sts.Annotations).To(HaveKeyWithValue("foo", "bar"))
+			}, timeout, interval).Should(Succeed())
+
+		})
+
+		It("should successfully add an extra volume and mount to the statefulset", func() {
+			By("Verifying the statefulset has only 1 volume and mount")
+			Expect(sts.Spec.Template.Spec.Volumes).To(HaveLen(2))
+			Expect(sts.Spec.Template.Spec.Containers[0].VolumeMounts).To(HaveLen(2))
+
+			By("Adding an extra volume to the QuestDB")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
+				q.Spec.ExtraVolumeMounts = append(q.Spec.ExtraVolumeMounts, v1.VolumeMount{
+					Name:      "extra-volume",
+					MountPath: "/extra",
+				})
+				q.Spec.ExtraVolumes = append(q.Spec.ExtraVolumes, v1.Volume{
+					Name: "extra-volume",
+					VolumeSource: v1.VolumeSource{
+						EmptyDir: &v1.EmptyDirVolumeSource{},
+					},
+				})
+				g.Expect(k8sClient.Update(ctx, q)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying the extra volume and mount have been added")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).To(Succeed())
+				Expect(sts.Spec.Template.Spec.Volumes).To(HaveLen(3))
+				Expect(sts.Spec.Template.Spec.Containers[0].VolumeMounts).To(HaveLen(3))
+			}, timeout, interval).Should(Succeed())
+		})
+
+		It("should update the statefulset on image change", func() {
+			By("Changing the image")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
+				q.Spec.Image = "questdb/questdb:a.b.c"
+				g.Expect(k8sClient.Update(ctx, q)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying the statefulset has been updated")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).To(Succeed())
+				g.Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("questdb/questdb:a.b.c"))
+			}, timeout, interval).Should(Succeed())
+		})
+
 	})
 
 	Context("pgauth updates", Ordered, func() {

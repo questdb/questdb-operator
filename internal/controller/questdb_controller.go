@@ -310,6 +310,11 @@ func (r *QuestDBReconciler) reconcileStatefulSet(ctx context.Context, q *crdv1be
 
 	var needsUpdate bool
 
+	if !reflect.DeepEqual(actual.ObjectMeta.Annotations, desired.ObjectMeta.Annotations) {
+		actual.ObjectMeta.Annotations = desired.ObjectMeta.Annotations
+		needsUpdate = true
+	}
+
 	if !reflect.DeepEqual(actual.Spec.Template.ObjectMeta, desired.Spec.Template.ObjectMeta) {
 		actual.Spec.Template.ObjectMeta = desired.ObjectMeta
 		needsUpdate = true
@@ -478,17 +483,7 @@ func (r *QuestDBReconciler) reconcilePvc(ctx context.Context, q *crdv1beta1.Ques
 		*actual = desired
 	}
 
-	// Resize the PVC if needed
-	if actual.Spec.Resources.Requests[v1.ResourceStorage] != q.Spec.Volume.Size {
-		actual.Spec.Resources.Requests = v1.ResourceList{
-			v1.ResourceStorage: q.Spec.Volume.Size,
-		}
-		if err = r.Update(ctx, actual); err != nil {
-			r.Recorder.Event(q, v1.EventTypeWarning, "PVCResizeFailed", err.Error())
-			return err
-		}
-		r.Recorder.Event(q, v1.EventTypeNormal, "PVCResized", "PVC resized")
-	}
+	// todo: properly handle resizing by updating the underlying persistent volume
 
 	return nil
 }
