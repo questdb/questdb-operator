@@ -239,14 +239,14 @@ var _ = Describe("QuestDB Controller", func() {
 			By("Changing the image pull policy")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(q), q)).To(Succeed())
-				q.Spec.ImagePullPolicy = "Always"
+				q.Spec.ImagePullPolicy = v1.PullAlways
 				g.Expect(k8sClient.Update(ctx, q)).To(Succeed())
 			}, timeout, interval).Should(Succeed())
 
 			By("Verifying the statefulset has been updated")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).To(Succeed())
-				g.Expect(sts.Spec.Template.Spec.Containers[0].ImagePullPolicy).To(Equal("Always"))
+				g.Expect(sts.Spec.Template.Spec.Containers[0].ImagePullPolicy).To(Equal(v1.PullAlways))
 			}, timeout, interval).Should(Succeed())
 		})
 	})

@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
@@ -73,6 +74,12 @@ var _ = Describe("QuestDB Webhook", func() {
 			}
 			Expect(k8sClient.Create(ctx, q)).ToNot(Succeed())
 		})
+
+		It("should handle an empty image pull policy", func() {
+			q.Spec.ImagePullPolicy = ""
+			Expect(k8sClient.Create(ctx, q)).To(Succeed())
+			Expect(q.Spec.ImagePullPolicy).To(Equal(v1.PullIfNotPresent))
+		})
 	})
 
 	Context("When validating QuestDB Updates", func() {
@@ -136,6 +143,7 @@ var _ = Describe("QuestDB Webhook", func() {
 			q.Spec.Volume.SnapshotName = "foo"
 			Expect(k8sClient.Update(ctx, q)).ToNot(Succeed())
 		})
+
 	})
 
 })
