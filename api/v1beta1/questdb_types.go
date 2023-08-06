@@ -27,11 +27,6 @@ const (
 	AnnotationQuestDBSecretType = "questdb.crd.questdb.io/secret-type"
 )
 
-type QuestDBResourcesSpec struct {
-	Limits   v1.ResourceList `json:"limits,omitempty"`
-	Requests v1.ResourceList `json:"requests,omitempty"`
-}
-
 type QuestDBVolumeSpec struct {
 	Selector         *metav1.LabelSelector `json:"selector,omitempty"`
 	Size             resource.Quantity     `json:"size,omitempty"`
@@ -62,7 +57,7 @@ type QuestDBSpec struct {
 	NodeSelector           map[string]string         `json:"nodeSelector,omitempty"`
 	PodAnnotations         map[string]string         `json:"podAnnotations,omitempty"`
 	PodSecurityContext     v1.PodSecurityContext     `json:"podSecurityContext,omitempty"`
-	Resources              QuestDBResourcesSpec      `json:"resources,omitempty"`
+	Resources              v1.ResourceRequirements   `json:"resources,omitempty"`
 	StatefulSetAnnotations map[string]string         `json:"statefulSetAnnotations,omitempty"`
 	Tolerations            []v1.Toleration           `json:"tolerations,omitempty"`
 }

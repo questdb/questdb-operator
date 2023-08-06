@@ -176,10 +176,7 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.Qu
 									Protocol:      v1.ProtocolTCP,
 								},
 							},
-							Resources: v1.ResourceRequirements{
-								Limits:   q.Spec.Resources.Limits,
-								Requests: q.Spec.Resources.Requests,
-							},
+							Resources: q.Spec.Resources,
 							LivenessProbe: &v1.Probe{
 								FailureThreshold:    5,
 								InitialDelaySeconds: 5,

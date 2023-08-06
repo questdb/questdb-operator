@@ -49,21 +49,6 @@ _Appears in:_
 
 
 
-#### QuestDBResourcesSpec
-
-
-
-
-
-_Appears in:_
-- [QuestDBSpec](#questdbspec)
-
-| Field | Description |
-| --- | --- |
-| `limits` _object (keys:[ResourceName](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#resourcename-v1-core), values:[Quantity](https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/quantity/))_ |  |
-| `requests` _object (keys:[ResourceName](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#resourcename-v1-core), values:[Quantity](https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/quantity/))_ |  |
-
-
 #### QuestDBSnapshot
 
 
@@ -183,7 +168,7 @@ _Appears in:_
 | `nodeSelector` _object (keys:string, values:string)_ |  |
 | `podAnnotations` _object (keys:string, values:string)_ |  |
 | `podSecurityContext` _[PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#podsecuritycontext-v1-core)_ |  |
-| `resources` _[QuestDBResourcesSpec](#questdbresourcesspec)_ |  |
+| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#resourcerequirements-v1-core)_ |  |
 | `statefulSetAnnotations` _object (keys:string, values:string)_ |  |
 | `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#toleration-v1-core) array_ |  |
 
