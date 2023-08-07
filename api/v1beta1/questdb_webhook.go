@@ -25,6 +25,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -49,6 +50,10 @@ func (r *QuestDB) Default() {
 
 	if r.Spec.ImagePullPolicy == v1.PullPolicy("") {
 		r.Spec.ImagePullPolicy = v1.PullIfNotPresent
+	}
+
+	if r.Spec.PodSecurityContext.FSGroup == nil {
+		r.Spec.PodSecurityContext.FSGroup = pointer.Int64(10001)
 	}
 }
 

@@ -9,6 +9,7 @@ metadata:
     app.kubernetes.io/created-by: questdb-operator
   name: questdb-sample
 spec:
+  imagePullPolicy: Always
   volume:
     size: 10Gi
   image: questdb/questdb:latest

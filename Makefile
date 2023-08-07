@@ -332,8 +332,15 @@ kind-provision: kind kind-create docker-build download-test-crds
 	echo "Waiting for cert-manager to be ready..."
 	sleep 45
 
+KIND_IMG ?= $(IMG)
+ifeq ($(DOCKER),podman)
+	KIND_IMG=localhost/$(IMG)
+endif
+
 .PHONY: kind-deploy
 kind-deploy: kind kind-provision deploy
+	kubectl set image deployment/questdb-operator-controller-manager -n questdb-operator-system \
+		manager=$(KIND_IMG)
 
 .PHONY: kind-clean
 kind-clean: kind
