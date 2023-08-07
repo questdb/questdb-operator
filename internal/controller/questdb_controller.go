@@ -313,7 +313,7 @@ func (r *QuestDBReconciler) reconcileStatefulSet(ctx context.Context, q *crdv1be
 	}
 
 	if !reflect.DeepEqual(actual.Spec.Template.ObjectMeta, desired.Spec.Template.ObjectMeta) {
-		actual.Spec.Template.ObjectMeta = desired.ObjectMeta
+		actual.Spec.Template.ObjectMeta = desired.Spec.Template.ObjectMeta
 		needsUpdate = true
 	}
 
