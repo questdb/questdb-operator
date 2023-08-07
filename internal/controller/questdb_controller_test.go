@@ -176,7 +176,7 @@ var _ = Describe("QuestDB Controller", func() {
 			By("Verifying the statefulset has no annotations")
 			Expect(sts.Annotations).To(BeEmpty())
 
-			By("Adding an annotation to the QuestDB")
+			By("Adding an annotation to the sts")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
 				q.Spec.StatefulSetAnnotations = map[string]string{"foo": "bar"}
@@ -189,6 +189,25 @@ var _ = Describe("QuestDB Controller", func() {
 				g.Expect(sts.Annotations).To(HaveKeyWithValue("foo", "bar"))
 			}, timeout, interval).Should(Succeed())
 
+		})
+
+		It("should update the statefulset pod annotations if they change", func() {
+			By("Verifying that the pod has no annotations")
+			Expect(sts.Spec.Template.Annotations).To(BeEmpty())
+
+			By("Adding an annotation to the pod")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, q)).To(Succeed())
+				q.Spec.PodAnnotations = map[string]string{"foo": "bar"}
+				g.Expect(k8sClient.Update(ctx, q)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying the annotation has been added")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).To(Succeed())
+				g.Expect(sts.Annotations).ToNot(HaveKeyWithValue("foo", "bar"))
+				g.Expect(sts.Spec.Template.Annotations).To(HaveKeyWithValue("foo", "bar"))
+			}, timeout, interval).Should(Succeed())
 		})
 
 		It("should successfully add an extra volume and mount to the statefulset", func() {
