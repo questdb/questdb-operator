@@ -27,11 +27,6 @@ const (
 	AnnotationQuestDBSecretType = "questdb.crd.questdb.io/secret-type"
 )
 
-type QuestDBResourcesSpec struct {
-	Limits   v1.ResourceList `json:"limits,omitempty"`
-	Requests v1.ResourceList `json:"requests,omitempty"`
-}
-
 type QuestDBVolumeSpec struct {
 	Selector         *metav1.LabelSelector `json:"selector,omitempty"`
 	Size             resource.Quantity     `json:"size,omitempty"`
@@ -52,13 +47,19 @@ type QuestDBSpec struct {
 
 	Image string `json:"image"`
 
-	Affinity         *v1.Affinity              `json:"affinity,omitempty"`
-	ExtraEnv         []v1.EnvVar               `json:"extraEnv,omitempty"`
-	ImagePullPolicy  v1.PullPolicy             `json:"imagePullPolicy,omitempty"`
-	ImagePullSecrets []v1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
-	NodeSelector     map[string]string         `json:"nodeSelector,omitempty"`
-	Resources        QuestDBResourcesSpec      `json:"resources,omitempty"`
-	Tolerations      []v1.Toleration           `json:"tolerations,omitempty"`
+	Affinity          *v1.Affinity     `json:"affinity,omitempty"`
+	ExtraEnv          []v1.EnvVar      `json:"extraEnv,omitempty"`
+	ExtraVolumeMounts []v1.VolumeMount `json:"extraVolumeMounts,omitempty"`
+	ExtraVolumes      []v1.Volume      `json:"extraVolumes,omitempty"`
+	// ImagePullPolicy defaults to IfNotPresent
+	ImagePullPolicy        v1.PullPolicy             `json:"imagePullPolicy,omitempty"`
+	ImagePullSecrets       []v1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
+	NodeSelector           map[string]string         `json:"nodeSelector,omitempty"`
+	PodAnnotations         map[string]string         `json:"podAnnotations,omitempty"`
+	PodSecurityContext     v1.PodSecurityContext     `json:"podSecurityContext,omitempty"`
+	Resources              v1.ResourceRequirements   `json:"resources,omitempty"`
+	StatefulSetAnnotations map[string]string         `json:"statefulSetAnnotations,omitempty"`
+	Tolerations            []v1.Toleration           `json:"tolerations,omitempty"`
 }
 
 type QuestDBEndpointStatus struct {

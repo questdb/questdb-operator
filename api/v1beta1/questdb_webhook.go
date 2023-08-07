@@ -23,7 +23,9 @@ import (
 	"reflect"
 	"strings"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -46,7 +48,13 @@ var _ webhook.Defaulter = &QuestDB{}
 func (r *QuestDB) Default() {
 	questdblog.Info("default", "name", r.Name)
 
-	// TODO(user): fill in your defaulting logic.
+	if r.Spec.ImagePullPolicy == v1.PullPolicy("") {
+		r.Spec.ImagePullPolicy = v1.PullIfNotPresent
+	}
+
+	if r.Spec.PodSecurityContext.FSGroup == nil {
+		r.Spec.PodSecurityContext.FSGroup = pointer.Int64(10001)
+	}
 }
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
@@ -150,6 +158,10 @@ func (r *QuestDB) ValidateUpdate(old runtime.Object) error {
 
 	if !reflect.DeepEqual(r.Spec.Volume.StorageClassName, oldQdb.Spec.Volume.StorageClassName) {
 		return errors.New("cannot change storage class name")
+	}
+
+	if r.Spec.ImagePullPolicy == "" {
+		return errors.New("image pull policy cannot be empty")
 	}
 
 	return nil
