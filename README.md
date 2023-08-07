@@ -17,14 +17,14 @@ The QuestDBSnapshot resource type requires the [CSI Snapshotter](https://github.
 - VolumeSnapshot Validation Webhook (optional, but recommended) <https://github.com/kubernetes-csi/external-snapshotter/tree/master/pkg/validation-webhook>
 - A CSI Driver that includes the snapshot capability (see <https://kubernetes-csi.github.io/docs/drivers.html> for an up-to-date list of drivers and their features)
 
+You also need to install cert-manager for operator webhooks or manually place the required certificates in a secret and mount it to the operator's deployment pod spec.
+
 Once you've installed the required components, you need to
 - Create a [VolumeSnapshotClass](https://kubernetes.io/docs/concepts/storage/volume-snapshot-classes/) that uses your installed CSI as a driver
 - If you want, you can also add the annotation: `snapshot.storage.kubernetes.io/is-default-class: "true"` to the VolumeSnapshotClass's metadata.
 
-Here's a step-by-step example of this installation in an AWS blg post:
+Here's a step-by-step example of this installation in an AWS blog post:
 <https://aws.amazon.com/blogs/containers/using-ebs-snapshots-for-persistent-storage-with-your-eks-cluster/>
-
-- cert manager
 
 ### Autoreload
 
