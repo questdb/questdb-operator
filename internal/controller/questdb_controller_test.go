@@ -329,14 +329,10 @@ var _ = Describe("QuestDB Controller", func() {
 			g.Expect(q.Status.StatefulSetReadyReplicas).To(Equal(0))
 		}, timeout, interval).Should(Succeed())
 
-		By("Getting the statefulset")
 		sts := &appsv1.StatefulSet{}
-		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)
-		}, timeout, interval).Should(Succeed())
-
 		By("Updating the statefulset status's readyreplicas to 1")
 		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).Should(Succeed())
 			sts.Status.Replicas = 1
 			sts.Status.ReadyReplicas = 1
 			g.Expect(k8sClient.Status().Update(ctx, sts)).To(Succeed())
@@ -348,6 +344,39 @@ var _ = Describe("QuestDB Controller", func() {
 			g.Expect(q.Status.StatefulSetReadyReplicas).To(Equal(1))
 		}, timeout, interval).Should(Succeed())
 
+	})
+
+	It("should disable liveness/readiness/startup probes if specified in the crd", func() {
+		By("Creating a new QuestDB")
+		q := testutils.BuildAndCreateMockQuestDB(ctx, k8sClient)
+		Expect(q.Spec.DisableProbes).Should(BeFalse())
+
+		By("Getting the statefulset")
+		sts := &appsv1.StatefulSet{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)
+		}, timeout, interval).Should(Succeed())
+
+		By("Verifying the liveness and readiness probes exist but startup does not")
+		Expect(sts.Spec.Template.Spec.Containers).Should(HaveLen(1))
+		Expect(sts.Spec.Template.Spec.Containers[0].LivenessProbe).ShouldNot(BeNil())
+		Expect(sts.Spec.Template.Spec.Containers[0].ReadinessProbe).ShouldNot(BeNil())
+		Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).Should(BeNil())
+
+		By("Updating the questdb to disable probes")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(q), q)).Should(Succeed())
+			q.Spec.DisableProbes = true
+			g.Expect(k8sClient.Update(ctx, q)).Should(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		By("Verifying the liveness and readiness probes don't exist")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, sts)).Should(Succeed())
+			g.Expect(sts.Spec.Template.Spec.Containers).Should(HaveLen(1))
+			g.Expect(sts.Spec.Template.Spec.Containers[0].LivenessProbe).Should(BeNil())
+			g.Expect(sts.Spec.Template.Spec.Containers[0].ReadinessProbe).Should(BeNil())
+		}, timeout, interval).Should(Succeed())
 	})
 
 })

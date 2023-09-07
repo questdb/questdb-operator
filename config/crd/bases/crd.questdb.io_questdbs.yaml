@@ -880,6 +880,8 @@ spec:
                   serverConfig:
                     type: string
                 type: object
+              disableProbes:
+                type: boolean
               extraEnv:
                 items:
                   description: EnvVar represents an environment variable present in
