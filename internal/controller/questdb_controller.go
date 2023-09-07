@@ -277,6 +277,13 @@ func (r *QuestDBReconciler) buildStatefulSet(q *crdv1beta1.QuestDB, s secrets.Qu
 		})
 	}
 
+	// Disable probes if set in CRD
+	if q.Spec.DisableProbes {
+		sts.Spec.Template.Spec.Containers[0].LivenessProbe = nil
+		sts.Spec.Template.Spec.Containers[0].ReadinessProbe = nil
+		sts.Spec.Template.Spec.Containers[0].StartupProbe = nil
+	}
+
 	if err := ctrl.SetControllerReference(q, &sts, r.Scheme); err != nil {
 		panic(fmt.Sprintf("failed to set controller reference, even though we are building an object from scratch: %s", err.Error()))
 	}
