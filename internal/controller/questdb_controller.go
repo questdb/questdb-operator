@@ -353,9 +353,10 @@ func (r *QuestDBReconciler) reconcileStatefulSet(ctx context.Context, q *crdv1be
 func (r *QuestDBReconciler) buildService(q *crdv1beta1.QuestDB) v1.Service {
 	svc := v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      q.Name,
-			Namespace: q.Namespace,
-			Labels:    q.Labels,
+			Name:        q.Name,
+			Namespace:   q.Namespace,
+			Labels:      q.Labels,
+			Annotations: q.Spec.ServiceAnnotations,
 		},
 		Spec: v1.ServiceSpec{
 			Ports: []v1.ServicePort{
@@ -391,7 +392,8 @@ func (r *QuestDBReconciler) buildService(q *crdv1beta1.QuestDB) v1.Service {
 
 func (r *QuestDBReconciler) reconcileService(ctx context.Context, q *crdv1beta1.QuestDB) error {
 	var (
-		err error
+		err         error
+		needsUpdate bool
 
 		actual  = &v1.Service{}
 		desired = r.buildService(q)
@@ -410,7 +412,21 @@ func (r *QuestDBReconciler) reconcileService(ctx context.Context, q *crdv1beta1.
 		*actual = desired
 	}
 
+	if !reflect.DeepEqual(actual.Annotations, desired.Annotations) {
+		actual.Annotations = desired.Annotations
+		needsUpdate = true
+	}
+
+	if needsUpdate {
+		if err = r.Update(ctx, actual); err != nil {
+			r.Recorder.Event(q, v1.EventTypeWarning, "ServiceUpdateFailed", err.Error())
+			return err
+		}
+		r.Recorder.Event(q, v1.EventTypeNormal, "ServiceUpdated", "Service updated")
+	}
+
 	return nil
+
 }
 
 func (r *QuestDBReconciler) buildPvc(q *crdv1beta1.QuestDB) v1.PersistentVolumeClaim {
