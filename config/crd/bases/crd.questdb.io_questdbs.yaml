@@ -2601,6 +2601,17 @@ spec:
                   type: object
                   x-kubernetes-map-type: atomic
                 type: array
+              ingress:
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  enabled:
+                    type: boolean
+                  ingressClassName:
+                    type: string
+                type: object
               nodeSelector:
                 additionalProperties:
                   type: string
