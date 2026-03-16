@@ -40,6 +40,12 @@ type QuestDBConfigSpec struct {
 	LogConfig    string `json:"logConfig,omitempty"`
 }
 
+type QuestDBIngressSpec struct {
+	Enabled          bool              `json:"enabled,omitempty"`
+	Annotations      map[string]string `json:"annotations,omitempty"`
+	IngressClassName string            `json:"ingressClassName,omitempty"`
+}
+
 // QuestDBSpec defines the desired state of QuestDB
 type QuestDBSpec struct {
 	Volume QuestDBVolumeSpec `json:"volume"`
@@ -54,6 +60,7 @@ type QuestDBSpec struct {
 	// ImagePullPolicy defaults to IfNotPresent
 	ImagePullPolicy        v1.PullPolicy             `json:"imagePullPolicy,omitempty"`
 	ImagePullSecrets       []v1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
+	Ingress                QuestDBIngressSpec        `json:"ingress,omitempty"`
 	NodeSelector           map[string]string         `json:"nodeSelector,omitempty"`
 	PodAnnotations         map[string]string         `json:"podAnnotations,omitempty"`
 	PodSecurityContext     v1.PodSecurityContext     `json:"podSecurityContext,omitempty"`

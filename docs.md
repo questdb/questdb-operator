@@ -49,6 +49,22 @@ _Appears in:_
 
 
 
+#### QuestDBIngressSpec
+
+
+
+
+
+_Appears in:_
+- [QuestDBSpec](#questdbspec)
+
+| Field | Description |
+| --- | --- |
+| `enabled` _boolean_ |  |
+| `annotations` _object (keys:string, values:string)_ |  |
+| `ingressClassName` _string_ |  |
+
+
 #### QuestDBSnapshot
 
 
@@ -165,6 +181,7 @@ _Appears in:_
 | `extraVolumes` _[Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#volume-v1-core) array_ |  |
 | `imagePullPolicy` _[PullPolicy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#pullpolicy-v1-core)_ | ImagePullPolicy defaults to IfNotPresent |
 | `imagePullSecrets` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#localobjectreference-v1-core) array_ |  |
+| `ingress` _[QuestDBIngressSpec](#questdbingressspec)_ |  |
 | `nodeSelector` _object (keys:string, values:string)_ |  |
 | `podAnnotations` _object (keys:string, values:string)_ |  |
 | `podSecurityContext` _[PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#podsecuritycontext-v1-core)_ |  |
