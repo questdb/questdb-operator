@@ -48,6 +48,7 @@ type QuestDBSpec struct {
 	Image string `json:"image"`
 
 	Affinity          *v1.Affinity     `json:"affinity,omitempty"`
+	DisableProbes     bool             `json:"disableProbes,omitempty"`
 	ExtraEnv          []v1.EnvVar      `json:"extraEnv,omitempty"`
 	ExtraVolumeMounts []v1.VolumeMount `json:"extraVolumeMounts,omitempty"`
 	ExtraVolumes      []v1.Volume      `json:"extraVolumes,omitempty"`
