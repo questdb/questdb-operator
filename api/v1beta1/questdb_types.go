@@ -58,6 +58,7 @@ type QuestDBSpec struct {
 	PodAnnotations         map[string]string         `json:"podAnnotations,omitempty"`
 	PodSecurityContext     v1.PodSecurityContext     `json:"podSecurityContext,omitempty"`
 	Resources              v1.ResourceRequirements   `json:"resources,omitempty"`
+	ServiceAnnotations     map[string]string         `json:"serviceAnnotations,omitempty"`
 	StatefulSetAnnotations map[string]string         `json:"statefulSetAnnotations,omitempty"`
 	Tolerations            []v1.Toleration           `json:"tolerations,omitempty"`
 }

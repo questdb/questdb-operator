@@ -82,9 +82,10 @@ var _ = Describe("QuestDB Controller", func() {
 
 	})
 
-	Context("port allocation", func() {
+	Context("service updates", func() {
 		var (
-			q *crdv1beta1.QuestDB
+			q   *crdv1beta1.QuestDB
+			svc = &v1.Service{}
 		)
 		BeforeEach(func() {
 			By("Creating a new QuestDB")
@@ -100,7 +101,6 @@ var _ = Describe("QuestDB Controller", func() {
 			}, timeout, interval).Should(Succeed())
 
 			By("Check the service port values")
-			svc := &v1.Service{}
 			Eventually(func() error {
 				return k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, svc)
 			}, timeout, interval).Should(Succeed())
@@ -125,6 +125,30 @@ var _ = Describe("QuestDB Controller", func() {
 					Protocol:   v1.ProtocolTCP,
 				},
 			))
+		})
+
+		It("should update the service annotations if they change", func() {
+			By("Getting the service and ensuring that there are no annotations")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, svc)).Should(Succeed())
+				g.Expect(svc.Annotations).Should(BeEmpty())
+			}, timeout, interval).Should(Succeed())
+
+			By("Adding a service annotation")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(q), q)).To(Succeed())
+				q.Spec.ServiceAnnotations = map[string]string{
+					"test-key": "test-value",
+				}
+				g.Expect(k8sClient.Update(ctx, q)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying that the service has been updated")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: q.Name, Namespace: q.Namespace}, svc)).Should(Succeed())
+				g.Expect(svc.Annotations).ShouldNot(BeEmpty())
+				g.Expect(svc.Annotations).Should(HaveKeyWithValue("test-key", "test-value"))
+			}, timeout, interval).Should(Succeed())
 		})
 
 	})

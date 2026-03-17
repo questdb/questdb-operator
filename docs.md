@@ -169,6 +169,7 @@ _Appears in:_
 | `podAnnotations` _object (keys:string, values:string)_ |  |
 | `podSecurityContext` _[PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#podsecuritycontext-v1-core)_ |  |
 | `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#resourcerequirements-v1-core)_ |  |
+| `serviceAnnotations` _object (keys:string, values:string)_ |  |
 | `statefulSetAnnotations` _object (keys:string, values:string)_ |  |
 | `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#toleration-v1-core) array_ |  |
 

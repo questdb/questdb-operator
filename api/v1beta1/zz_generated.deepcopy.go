@@ -353,6 +353,13 @@ func (in *QuestDBSpec) DeepCopyInto(out *QuestDBSpec) {
 	}
 	in.PodSecurityContext.DeepCopyInto(&out.PodSecurityContext)
 	in.Resources.DeepCopyInto(&out.Resources)
+	if in.ServiceAnnotations != nil {
+		in, out := &in.ServiceAnnotations, &out.ServiceAnnotations
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.StatefulSetAnnotations != nil {
 		in, out := &in.StatefulSetAnnotations, &out.StatefulSetAnnotations
 		*out = make(map[string]string, len(*in))
