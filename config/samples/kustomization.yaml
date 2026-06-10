@@ -3,4 +3,4 @@ resources:
 - crd_v1beta1_questdbsnapshot.yaml
 - crd_v1beta1_questdb.yaml
 - crd_v1beta1_questdbsnapshotschedule.yaml
-#+kubebuilder:scaffold:manifestskustomizesamples
+# +kubebuilder:scaffold:manifestskustomizesamples

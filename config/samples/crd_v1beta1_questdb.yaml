@@ -2,14 +2,8 @@ apiVersion: crd.questdb.io/v1beta1
 kind: QuestDB
 metadata:
   labels:
-    app.kubernetes.io/name: questdb
-    app.kubernetes.io/instance: questdb-sample
-    app.kubernetes.io/part-of: questdb-operator
+    app.kubernetes.io/name: questdb-operator
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: questdb-operator
   name: questdb-sample
 spec:
-  imagePullPolicy: Always
-  volume:
-    size: 10Gi
-  image: questdb/questdb:latest
+  # TODO(user): Add fields here

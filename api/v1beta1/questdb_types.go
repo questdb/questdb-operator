@@ -1,5 +1,5 @@
 /*
-Copyright 2023.
+Copyright 2026.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,83 +17,73 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const (
-	AnnotationQuestDBName       = "questdb.crd.questdb.io/name"
-	AnnotationQuestDBSecretType = "questdb.crd.questdb.io/secret-type"
-)
-
-type QuestDBVolumeSpec struct {
-	Selector         *metav1.LabelSelector `json:"selector,omitempty"`
-	Size             resource.Quantity     `json:"size,omitempty"`
-	VolumeName       string                `json:"volumeName,omitempty"`
-	StorageClassName *string               `json:"storageClassName,omitempty"`
-	SnapshotName     string                `json:"snapshotName,omitempty"`
-}
-
-type QuestDBConfigSpec struct {
-	ServerConfig string `json:"serverConfig,omitempty"`
-	LogConfig    string `json:"logConfig,omitempty"`
-}
+// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
+// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // QuestDBSpec defines the desired state of QuestDB
 type QuestDBSpec struct {
-	Volume QuestDBVolumeSpec `json:"volume"`
-	Config QuestDBConfigSpec `json:"config,omitempty"`
+	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
+	// Important: Run "make" to regenerate code after modifying this file
+	// The following markers will use OpenAPI v3 schema to validate the value
+	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	Image string `json:"image"`
-
-	Affinity          *v1.Affinity     `json:"affinity,omitempty"`
-	ExtraEnv          []v1.EnvVar      `json:"extraEnv,omitempty"`
-	ExtraVolumeMounts []v1.VolumeMount `json:"extraVolumeMounts,omitempty"`
-	ExtraVolumes      []v1.Volume      `json:"extraVolumes,omitempty"`
-	// ImagePullPolicy defaults to IfNotPresent
-	ImagePullPolicy        v1.PullPolicy             `json:"imagePullPolicy,omitempty"`
-	ImagePullSecrets       []v1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
-	NodeSelector           map[string]string         `json:"nodeSelector,omitempty"`
-	PodAnnotations         map[string]string         `json:"podAnnotations,omitempty"`
-	PodSecurityContext     v1.PodSecurityContext     `json:"podSecurityContext,omitempty"`
-	Resources              v1.ResourceRequirements   `json:"resources,omitempty"`
-	StatefulSetAnnotations map[string]string         `json:"statefulSetAnnotations,omitempty"`
-	Tolerations            []v1.Toleration           `json:"tolerations,omitempty"`
+	// foo is an example field of QuestDB. Edit questdb_types.go to remove/update
+	// +optional
+	Foo *string `json:"foo,omitempty"`
 }
 
-type QuestDBEndpointStatus struct {
-	Ilp  string `json:"ilp,omitempty"`
-	Psql string `json:"psql,omitempty"`
-	Http string `json:"http,omitempty"`
-}
-
-// QuestDBStatus defines the observed state of QuestDB
+// QuestDBStatus defines the observed state of QuestDB.
 type QuestDBStatus struct {
-	StatefulSetReadyReplicas int `json:"statefulSetReadyReplicas,omitempty"`
+	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+	// Important: Run "make" to regenerate code after modifying this file
+
+	// For Kubernetes API conventions, see:
+	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+
+	// conditions represent the current state of the QuestDB resource.
+	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
+	//
+	// Standard condition types include:
+	// - "Available": the resource is fully functional
+	// - "Progressing": the resource is being created or updated
+	// - "Degraded": the resource failed to reach or maintain its desired state
+	//
+	// The status of each condition is one of True, False, or Unknown.
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
-//+kubebuilder:resource:shortName=qdb;qdbs
-//+kubebuilder:printcolumn:name="Ready Replicas",type=integer,JSONPath=`.status.statefulSetReadyReplicas`
-//+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // QuestDB is the Schema for the questdbs API
 type QuestDB struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.TypeMeta `json:",inline"`
 
-	Spec   QuestDBSpec   `json:"spec,omitempty"`
-	Status QuestDBStatus `json:"status,omitempty"`
+	// metadata is a standard object metadata
+	// +optional
+	metav1.ObjectMeta `json:"metadata,omitzero"`
+
+	// spec defines the desired state of QuestDB
+	// +required
+	Spec QuestDBSpec `json:"spec"`
+
+	// status defines the observed state of QuestDB
+	// +optional
+	Status QuestDBStatus `json:"status,omitzero"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // QuestDBList contains a list of QuestDB
 type QuestDBList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
+	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []QuestDB `json:"items"`
 }
 

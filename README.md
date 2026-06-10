@@ -1,134 +1,125 @@
 # questdb-operator
-
-The QuestDB Operator is a group of controllers and webhooks that are designed to manage QuestDB instances running in Kubernetes clusters.
+// TODO(user): Add simple overview of use/purpose
 
 ## Description
-
-### Custom Resource Definitions
-Click [here](./docs.md) for the documentation of the Custom Resource Definitions included in this operator.
-
-### Prerequisites
-
-The QuestDB resource type should be compatible with mainstream Kubernetes distributions, since it orchestrates `v1` and `apps/v1` components like PersistentVolumeClaims, StatefulSets, Services, and ConfigMaps.
-
-The QuestDBSnapshot resource type requires the [CSI Snapshotter](https://github.com/kubernetes-csi/external-snapshotter) to be installed. This includes installing:
-- CRDs <https://github.com/kubernetes-csi/external-snapshotter/tree/master/client/config/crd>
-- VolumeSnapshot Controller <https://github.com/kubernetes-csi/external-snapshotter/tree/master/pkg/common-controller>
-- VolumeSnapshot Validation Webhook (optional, but recommended) <https://github.com/kubernetes-csi/external-snapshotter/tree/master/pkg/validation-webhook>
-- A CSI Driver that includes the snapshot capability (see <https://kubernetes-csi.github.io/docs/drivers.html> for an up-to-date list of drivers and their features)
-
-You also need to install cert-manager for operator webhooks or manually place the required certificates in a secret and mount it to the operator's deployment pod spec.
-
-Once you've installed the required components, you need to
-- Create a [VolumeSnapshotClass](https://kubernetes.io/docs/concepts/storage/volume-snapshot-classes/) that uses your installed CSI as a driver
-- If you want, you can also add the annotation: `snapshot.storage.kubernetes.io/is-default-class: "true"` to the VolumeSnapshotClass's metadata.
-
-Here's a step-by-step example of this installation in an AWS blog post:
-<https://aws.amazon.com/blogs/containers/using-ebs-snapshots-for-persistent-storage-with-your-eks-cluster/>
-
-### Autoreload
-
-The controller does not automatically update the StatefulSet on config changes, but you can enable this by adding
-a `stakater/Reloader` annotation to the StatefulSet directly, pointing to the child ConfigMap. The controller will persist any annotations made to child objects, so this will work with no issues. See <https://github.com/stakater/Reloader> for more information.
-
-### Credentials
-
-To use a secret as a source for ilp or psql credentials, you need to add the following annotations to an existing secret:
-
-```yaml
-# ILP Secret
-annotations:
-  questdb.crd.questdb.io/name: questdb-sample
-  questdb.crd.questdb.io/secret-type: ilp
-
-# PSQL Secret
-annotations:
-  questdb.crd.questdb.io/name: questdb-sample
-  questdb.crd.questdb.io/secret-type: psql
-```
-
-The ILP Secret must contain an `auth.json` key that contains your JWK's public key used for ILP authentication. This will be mounted to the database container as a file and referenced by the database.
-
-The PSQL Secret must contain the `QDB_PG_USER` and `QDB_PG_PASSWORD` keys. These will be mounted to the container as environment variables. Be sure not to overwrite these in `questdb.spec.extraEnv`, as this can cause unexpected behavior, and add-ons like snapshots will likely break.
-
-See the [yaml examples](config/samples/secrets.yaml) for more information.
-
-Also see the [QuestDB ILP Auth documentation](https://questdb.io/docs/reference/api/ilp/authenticate/) for examples on how to generate a public/private keypair.
+// TODO(user): An in-depth paragraph about your project and overview of use
 
 ## Getting Started
-You’ll need a Kubernetes cluster to run against. You can use [KIND](https://sigs.k8s.io/kind) to get a local cluster for testing, or run against a remote cluster.
-**Note:** Your controller will automatically use the current context in your kubeconfig file (i.e. whatever cluster `kubectl cluster-info` shows).
 
-### Running on the cluster
-1. Install Instances of Custom Resources:
+### Prerequisites
+- go version v1.24.6+
+- docker version 17.03+.
+- kubectl version v1.11.3+.
+- Access to a Kubernetes v1.11.3+ cluster.
 
-```sh
-kubectl apply -f config/samples/
-```
-
-2. Build and push your image to the location specified by `IMG`:
+### To Deploy on the cluster
+**Build and push your image to the location specified by `IMG`:**
 
 ```sh
 make docker-build docker-push IMG=<some-registry>/questdb-operator:tag
 ```
 
-3. Deploy the controller to the cluster with the image specified by `IMG`:
+**NOTE:** This image ought to be published in the personal registry you specified.
+And it is required to have access to pull the image from the working environment.
+Make sure you have the proper permission to the registry if the above commands don’t work.
 
-```sh
-make deploy IMG=<some-registry>/questdb-operator:tag
-```
-
-### Uninstall CRDs
-To delete the CRDs from the cluster:
-
-```sh
-make uninstall
-```
-
-### Undeploy controller
-UnDeploy the controller from the cluster:
-
-```sh
-make undeploy
-```
-
-## Contributing
-
-### How it works
-This project aims to follow the Kubernetes [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/).
-
-It uses [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/),
-which provide a reconcile function responsible for synchronizing resources until the desired state is reached on the cluster.
-
-### Test It Out
-1. Install the CRDs into the cluster:
+**Install the CRDs into the cluster:**
 
 ```sh
 make install
 ```
 
-2. Run your controller (this will run in the foreground, so switch to a new terminal if you want to leave it running):
+**Deploy the Manager to the cluster with the image specified by `IMG`:**
 
 ```sh
-make run
+make deploy IMG=<some-registry>/questdb-operator:tag
 ```
 
-**NOTE:** You can also run this in one step by running: `make install run`
+> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
+privileges or be logged in as admin.
 
-### Modifying the API definitions
-If you are editing the API definitions, generate the manifests such as CRs or CRDs using:
+**Create instances of your solution**
+You can apply the samples (examples) from the config/sample:
 
 ```sh
-make manifests
+kubectl apply -k config/samples/
 ```
 
-**NOTE:** Run `make --help` for more information on all potential `make` targets
+>**NOTE**: Ensure that the samples has default values to test it out.
+
+### To Uninstall
+**Delete the instances (CRs) from the cluster:**
+
+```sh
+kubectl delete -k config/samples/
+```
+
+**Delete the APIs(CRDs) from the cluster:**
+
+```sh
+make uninstall
+```
+
+**UnDeploy the controller from the cluster:**
+
+```sh
+make undeploy
+```
+
+## Project Distribution
+
+Following the options to release and provide this solution to the users.
+
+### By providing a bundle with all YAML files
+
+1. Build the installer for the image built and published in the registry:
+
+```sh
+make build-installer IMG=<some-registry>/questdb-operator:tag
+```
+
+**NOTE:** The makefile target mentioned above generates an 'install.yaml'
+file in the dist directory. This file contains all the resources built
+with Kustomize, which are necessary to install this project without its
+dependencies.
+
+2. Using the installer
+
+Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
+the project, i.e.:
+
+```sh
+kubectl apply -f https://raw.githubusercontent.com/<org>/questdb-operator/<tag or branch>/dist/install.yaml
+```
+
+### By providing a Helm Chart
+
+1. Build the chart using the optional helm plugin
+
+```sh
+kubebuilder edit --plugins=helm/v2-alpha
+```
+
+2. See that a chart was generated under 'dist/chart', and users
+can obtain this solution from there.
+
+**NOTE:** If you change the project, you need to update the Helm Chart
+using the same command above to sync the latest changes. Furthermore,
+if you create webhooks, you need to use the above command with
+the '--force' flag and manually ensure that any custom configuration
+previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
+is manually re-applied afterwards.
+
+## Contributing
+// TODO(user): Add detailed information on how you would like others to contribute to this project
+
+**NOTE:** Run `make help` for more information on all potential `make` targets
 
 More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
 ## License
 
-Copyright 2023.
+Copyright 2026.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -141,3 +132,4 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
