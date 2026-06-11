@@ -24,6 +24,7 @@ import (
 	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -118,6 +119,7 @@ var _ = Describe("QuestDBBackup Controller", func() {
 			_ = k8sClient.Delete(ctx, b)
 		}
 		_ = k8sClient.DeleteAllOf(ctx, &volumesnapshotv1.VolumeSnapshot{}, client.InNamespace(ns))
+		_ = k8sClient.DeleteAllOf(ctx, &coordinationv1.Lease{}, client.InNamespace(ns))
 	})
 
 	It("runs the full lifecycle and releases the checkpoint on success", func() {
@@ -201,6 +203,35 @@ var _ = Describe("QuestDBBackup Controller", func() {
 
 		Expect(reconcileBackup("b4")).To(Succeed())
 		Expect(getBackup("b4").Status.Phase).To(Equal(crdv1beta2.BackupPhaseFailed))
+	})
+
+	It("serializes concurrent backups for one QuestDB via the checkpoint lease", func() {
+		newBackup("lease-a")
+		newBackup("lease-b")
+
+		// Drive A until it holds the checkpoint (and thus the lease).
+		Expect(reconcileBackup("lease-a")).To(Succeed()) // finalizer
+		Expect(reconcileBackup("lease-a")).To(Succeed()) // acquire lease + checkpoint created
+		Expect(getBackup("lease-a").Status.Phase).To(Equal(crdv1beta2.BackupPhaseCheckpointCreated))
+
+		// B cannot acquire the lease while A holds it, so it stays Pending and opens no checkpoint.
+		Expect(reconcileBackup("lease-b")).To(Succeed()) // finalizer
+		Expect(reconcileBackup("lease-b")).To(Succeed()) // blocked on lease
+		Expect(getBackup("lease-b").Status.Phase).NotTo(Equal(crdv1beta2.BackupPhaseCheckpointCreated))
+		Expect(getBackup("lease-b").Status.CheckpointCreatedAt).To(BeNil())
+		Expect(fake.creates()).To(Equal(1)) // only A opened a checkpoint
+
+		// Complete A; it releases the checkpoint and the lease.
+		Expect(reconcileBackup("lease-a")).To(Succeed()) // create VolumeSnapshot
+		markSnapshotReady("lease-a")
+		Expect(reconcileBackup("lease-a")).To(Succeed()) // -> SnapshotCreated
+		Expect(reconcileBackup("lease-a")).To(Succeed()) // release + Succeeded (frees the lease)
+		Expect(getBackup("lease-a").Status.Phase).To(Equal(crdv1beta2.BackupPhaseSucceeded))
+
+		// Now B can acquire the lease and open its checkpoint.
+		Expect(reconcileBackup("lease-b")).To(Succeed())
+		Expect(getBackup("lease-b").Status.Phase).To(Equal(crdv1beta2.BackupPhaseCheckpointCreated))
+		Expect(fake.creates()).To(Equal(2))
 	})
 
 	It("does not mark Succeeded while CHECKPOINT RELEASE is failing", func() {

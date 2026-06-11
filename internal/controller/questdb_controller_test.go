@@ -97,6 +97,14 @@ var _ = Describe("QuestDB Controller", func() {
 		svc := &corev1.Service{}
 		Expect(k8sClient.Get(ctx, key, svc)).To(Succeed())
 		Expect(svc.Spec.Ports).To(HaveLen(4))
+		// The ILP-over-TCP port (9009) must stay exposed for legacy ingestion clients.
+		ilpPorts := make([]int32, 0)
+		for _, p := range svc.Spec.Ports {
+			if p.Name == "ilp" {
+				ilpPorts = append(ilpPorts, p.Port)
+			}
+		}
+		Expect(ilpPorts).To(ConsistOf(int32(9009)))
 
 		By("creating the data PVC")
 		pvc := &corev1.PersistentVolumeClaim{}

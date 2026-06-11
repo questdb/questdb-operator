@@ -72,6 +72,7 @@ type QuestDBBackupReconciler struct {
 // +kubebuilder:rbac:groups=crd.questdb.io,resources=questdbbackups/finalizers,verbs=update
 // +kubebuilder:rbac:groups=crd.questdb.io,resources=questdbs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
@@ -98,16 +99,21 @@ func (r *QuestDBBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if backup.IsComplete() {
+		// Safety net: drop the checkpoint slot if a terminal reconcile didn't (e.g. after a crash).
+		if err := r.releaseCheckpointLease(ctx, backup.Namespace, backup.Spec.QuestDBName, backup.Name); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, nil
 	}
 
-	// A QuestDB can hold only one checkpoint, so only the oldest in-flight backup for a given
-	// QuestDB proceeds; the rest wait their turn.
-	active, err := r.isActiveBackup(ctx, backup)
+	// A QuestDB allows only one active checkpoint, so a backup must hold the per-QuestDB checkpoint
+	// lease before opening one; the rest wait their turn. The Lease's optimistic concurrency makes
+	// the claim atomic across concurrent reconciles.
+	acquired, err := r.acquireCheckpointLease(ctx, backup)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if !active {
+	if !acquired {
 		return ctrl.Result{RequeueAfter: snapshotPollInterval}, nil
 	}
 
@@ -277,6 +283,10 @@ func (r *QuestDBBackupReconciler) reconcileSnapshotCreated(ctx context.Context, 
 	if err := r.Status().Update(ctx, backup); err != nil {
 		return ctrl.Result{}, err
 	}
+	// The checkpoint is released and the backup is terminal; free the slot for the next backup.
+	if err := r.releaseCheckpointLease(ctx, backup.Namespace, backup.Spec.QuestDBName, backup.Name); err != nil {
+		return ctrl.Result{}, err
+	}
 	r.Recorder.Event(backup, corev1.EventTypeNormal, "BackupSucceeded", "backup complete: "+backup.Status.VolumeSnapshotName)
 	return ctrl.Result{}, nil
 }
@@ -309,6 +319,10 @@ func (r *QuestDBBackupReconciler) reconcileDelete(ctx context.Context, backup *c
 		}
 	}
 
+	// Drop the checkpoint slot (if held) now that any outstanding checkpoint has been released.
+	if err := r.releaseCheckpointLease(ctx, backup.Namespace, backup.Spec.QuestDBName, backup.Name); err != nil {
+		return ctrl.Result{}, err
+	}
 	controllerutil.RemoveFinalizer(backup, crdv1beta2.BackupFinalizer)
 	return ctrl.Result{}, r.Update(ctx, backup)
 }
@@ -326,6 +340,10 @@ func (r *QuestDBBackupReconciler) abort(ctx context.Context, backup *crdv1beta2.
 	backup.Status.Phase = crdv1beta2.BackupPhaseFailed
 	setBackupCondition(backup, metav1.ConditionFalse, reason, msg)
 	if err := r.Status().Update(ctx, backup); err != nil {
+		return ctrl.Result{}, err
+	}
+	// Terminal: free the checkpoint slot for the next backup.
+	if err := r.releaseCheckpointLease(ctx, backup.Namespace, backup.Spec.QuestDBName, backup.Name); err != nil {
 		return ctrl.Result{}, err
 	}
 	r.Recorder.Event(backup, corev1.EventTypeWarning, reason, msg)
@@ -397,32 +415,6 @@ func (r *QuestDBBackupReconciler) ensureVolumeSnapshot(ctx context.Context, back
 	}
 	r.Recorder.Event(backup, corev1.EventTypeNormal, "SnapshotCreating", "creating volume snapshot "+vs.Name)
 	return vs, nil
-}
-
-// isActiveBackup reports whether this backup is the oldest in-flight backup for its QuestDB.
-func (r *QuestDBBackupReconciler) isActiveBackup(ctx context.Context, backup *crdv1beta2.QuestDBBackup) (bool, error) {
-	var list crdv1beta2.QuestDBBackupList
-	if err := r.List(ctx, &list, client.InNamespace(backup.Namespace)); err != nil {
-		return false, err
-	}
-	var oldest *crdv1beta2.QuestDBBackup
-	for i := range list.Items {
-		b := &list.Items[i]
-		if b.Spec.QuestDBName != backup.Spec.QuestDBName || b.IsComplete() || !b.DeletionTimestamp.IsZero() {
-			continue
-		}
-		if oldest == nil || isOlder(b, oldest) {
-			oldest = b
-		}
-	}
-	return oldest != nil && oldest.Name == backup.Name, nil
-}
-
-func isOlder(a, b *crdv1beta2.QuestDBBackup) bool {
-	if a.CreationTimestamp.Equal(&b.CreationTimestamp) {
-		return a.Name < b.Name
-	}
-	return a.CreationTimestamp.Before(&b.CreationTimestamp)
 }
 
 func setBackupCondition(backup *crdv1beta2.QuestDBBackup, status metav1.ConditionStatus, reason, msg string) {
