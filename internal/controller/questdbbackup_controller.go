@@ -100,23 +100,13 @@ func (r *QuestDBBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	if backup.IsComplete() {
 		// Safety net: drop the checkpoint slot if a terminal reconcile didn't (e.g. after a crash).
-		if err := r.releaseCheckpointLease(ctx, backup.Namespace, backup.Spec.QuestDBName, backup.Name); err != nil {
+		if err := r.releaseCheckpointLeaseFor(ctx, backup); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
 	}
 
-	// A QuestDB allows only one active checkpoint, so a backup must hold the per-QuestDB checkpoint
-	// lease before opening one; the rest wait their turn. The Lease's optimistic concurrency makes
-	// the claim atomic across concurrent reconciles.
-	acquired, err := r.acquireCheckpointLease(ctx, backup)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if !acquired {
-		return ctrl.Result{RequeueAfter: snapshotPollInterval}, nil
-	}
-
+	// Resolve the QuestDB first so the checkpoint Lease can be owned by it (GC'd with it).
 	qdb := &crdv1beta2.QuestDB{}
 	if err := r.Get(ctx, types.NamespacedName{Name: backup.Spec.QuestDBName, Namespace: backup.Namespace}, qdb); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -131,6 +121,17 @@ func (r *QuestDBBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return r.abort(ctx, backup, nil, "QuestDBNotFound", fmt.Sprintf("QuestDB %q not found", backup.Spec.QuestDBName))
 		}
 		return ctrl.Result{}, err
+	}
+
+	// A QuestDB allows only one active checkpoint, so a backup must hold the per-QuestDB checkpoint
+	// lease before opening one; the rest wait their turn. The Lease's optimistic concurrency makes
+	// the claim atomic across concurrent reconciles.
+	acquired, err := r.acquireCheckpointLease(ctx, backup, qdb)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if !acquired {
+		return ctrl.Result{RequeueAfter: snapshotPollInterval}, nil
 	}
 
 	switch backup.Status.Phase {
@@ -284,7 +285,7 @@ func (r *QuestDBBackupReconciler) reconcileSnapshotCreated(ctx context.Context, 
 		return ctrl.Result{}, err
 	}
 	// The checkpoint is released and the backup is terminal; free the slot for the next backup.
-	if err := r.releaseCheckpointLease(ctx, backup.Namespace, backup.Spec.QuestDBName, backup.Name); err != nil {
+	if err := r.releaseCheckpointLeaseFor(ctx, backup); err != nil {
 		return ctrl.Result{}, err
 	}
 	r.Recorder.Event(backup, corev1.EventTypeNormal, "BackupSucceeded", "backup complete: "+backup.Status.VolumeSnapshotName)
@@ -320,7 +321,7 @@ func (r *QuestDBBackupReconciler) reconcileDelete(ctx context.Context, backup *c
 	}
 
 	// Drop the checkpoint slot (if held) now that any outstanding checkpoint has been released.
-	if err := r.releaseCheckpointLease(ctx, backup.Namespace, backup.Spec.QuestDBName, backup.Name); err != nil {
+	if err := r.releaseCheckpointLeaseFor(ctx, backup); err != nil {
 		return ctrl.Result{}, err
 	}
 	controllerutil.RemoveFinalizer(backup, crdv1beta2.BackupFinalizer)
@@ -343,7 +344,7 @@ func (r *QuestDBBackupReconciler) abort(ctx context.Context, backup *crdv1beta2.
 		return ctrl.Result{}, err
 	}
 	// Terminal: free the checkpoint slot for the next backup.
-	if err := r.releaseCheckpointLease(ctx, backup.Namespace, backup.Spec.QuestDBName, backup.Name); err != nil {
+	if err := r.releaseCheckpointLeaseFor(ctx, backup); err != nil {
 		return ctrl.Result{}, err
 	}
 	r.Recorder.Event(backup, corev1.EventTypeWarning, reason, msg)

@@ -26,15 +26,17 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	crdv1beta2 "github.com/questdb/questdb-operator/api/v1beta2"
 )
 
 // checkpointLeaseDuration bounds how long a checkpoint lease is honored without renewal. The holding
-// backup renews it on every reconcile (well under this interval); if the controller stops renewing
-// (e.g. it crashes), the lease expires and another backup for the same QuestDB may take over the
-// single checkpoint slot rather than waiting forever.
-const checkpointLeaseDuration = 2 * time.Minute
+// backup renews it on every reconcile (well under this interval). It MUST exceed checkpointHoldDeadline:
+// a crashed holder with an open checkpoint force-releases it via its own hold-deadline abort when the
+// controller restarts; making the lease outlive that deadline guarantees no sibling can take the slot
+// over (and open a second checkpoint on the same QuestDB) before the original holder has cleaned up.
+const checkpointLeaseDuration = checkpointHoldDeadline + 5*time.Minute
 
 // checkpointLeaseName is the Lease that serializes checkpoint access for a single QuestDB. QuestDB
 // allows only one active checkpoint, so at most one backup per QuestDB may hold it at a time.
@@ -46,7 +48,7 @@ func checkpointLeaseName(questdbName string) string {
 // of this backup, returning true only if this backup now holds it. Acquisition is serialized by the
 // Lease object's optimistic concurrency (Create/Update conflict on resourceVersion), so concurrent
 // reconciles can never both believe they hold the slot.
-func (r *QuestDBBackupReconciler) acquireCheckpointLease(ctx context.Context, backup *crdv1beta2.QuestDBBackup) (bool, error) {
+func (r *QuestDBBackupReconciler) acquireCheckpointLease(ctx context.Context, backup *crdv1beta2.QuestDBBackup, qdb *crdv1beta2.QuestDB) (bool, error) {
 	name := checkpointLeaseName(backup.Spec.QuestDBName)
 	holder := backup.Name
 	now := metav1.NowMicro()
@@ -64,6 +66,10 @@ func (r *QuestDBBackupReconciler) acquireCheckpointLease(ctx context.Context, ba
 				RenewTime:            &now,
 			},
 		}
+		// Own the Lease by the QuestDB so it is garbage-collected when the QuestDB is deleted.
+		if oerr := controllerutil.SetOwnerReference(qdb, lease, r.Scheme); oerr != nil {
+			return false, oerr
+		}
 		if cerr := r.Create(ctx, lease); cerr != nil {
 			// Lost the race to another backup that created it first; wait our turn.
 			return false, client.IgnoreAlreadyExists(cerr)
@@ -78,6 +84,10 @@ func (r *QuestDBBackupReconciler) acquireCheckpointLease(ctx context.Context, ba
 	if !held && !leaseExpired(lease, now.Time) {
 		// A different backup holds a live lease.
 		return false, nil
+	}
+	if held && lease.Spec.RenewTime != nil && now.Sub(lease.Spec.RenewTime.Time) < checkpointLeaseDuration/2 {
+		// Already ours and recently renewed; skip the write to avoid renewing on every reconcile.
+		return true, nil
 	}
 
 	lease.Spec.HolderIdentity = &holder
@@ -103,6 +113,12 @@ func leaseExpired(lease *coordinationv1.Lease, now time.Time) bool {
 	}
 	expiry := lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds) * time.Second)
 	return now.After(expiry)
+}
+
+// releaseCheckpointLeaseFor releases the checkpoint lease held by this backup (if any). It derives
+// all identifiers from the backup so callers can't transpose namespace/questdbName/holder.
+func (r *QuestDBBackupReconciler) releaseCheckpointLeaseFor(ctx context.Context, backup *crdv1beta2.QuestDBBackup) error {
+	return r.releaseCheckpointLease(ctx, backup.Namespace, backup.Spec.QuestDBName, backup.Name)
 }
 
 // releaseCheckpointLease releases the checkpoint lease for a QuestDB, but only if this backup holds

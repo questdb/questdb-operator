@@ -29,6 +29,17 @@ func pgErr(code, msg string) error {
 	return &pgconn.PgError{Code: code, Message: msg}
 }
 
+// TestCheckpointLeaseOutlivesHoldDeadline pins the invariant that the checkpoint lease cannot expire
+// before a holder's open checkpoint would be force-released by its hold-deadline abort. If the lease
+// expired first, a sibling backup could take the slot over and open a second checkpoint on the same
+// QuestDB concurrently.
+func TestCheckpointLeaseOutlivesHoldDeadline(t *testing.T) {
+	if checkpointLeaseDuration <= checkpointHoldDeadline {
+		t.Fatalf("checkpointLeaseDuration (%s) must exceed checkpointHoldDeadline (%s)",
+			checkpointLeaseDuration, checkpointHoldDeadline)
+	}
+}
+
 func TestIsCheckpointAlreadyExists(t *testing.T) {
 	cases := []struct {
 		name string

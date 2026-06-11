@@ -214,6 +214,12 @@ var _ = Describe("QuestDBBackup Controller", func() {
 		Expect(reconcileBackup("lease-a")).To(Succeed()) // acquire lease + checkpoint created
 		Expect(getBackup("lease-a").Status.Phase).To(Equal(crdv1beta2.BackupPhaseCheckpointCreated))
 
+		By("owning the checkpoint lease by the QuestDB so it is garbage-collected")
+		lease := &coordinationv1.Lease{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "questdb-checkpoint-" + qdbName, Namespace: ns}, lease)).To(Succeed())
+		Expect(lease.OwnerReferences).To(HaveLen(1))
+		Expect(lease.OwnerReferences[0].Kind).To(Equal("QuestDB"))
+
 		// B cannot acquire the lease while A holds it, so it stays Pending and opens no checkpoint.
 		Expect(reconcileBackup("lease-b")).To(Succeed()) // finalizer
 		Expect(reconcileBackup("lease-b")).To(Succeed()) // blocked on lease
