@@ -2,9 +2,9 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/crd.questdb.io_questdbsnapshots.yaml
 - bases/crd.questdb.io_questdbs.yaml
-- bases/crd.questdb.io_questdbsnapshotschedules.yaml
+- bases/crd.questdb.io_questdbbackups.yaml
+- bases/crd.questdb.io_questdbbackupschedules.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

@@ -1,0 +1,11 @@
+apiVersion: crd.questdb.io/v1beta2
+kind: QuestDB
+metadata:
+  name: questdb-restored
+spec:
+  volume:
+    size: 5Gi
+    # Restore the data volume from a VolumeSnapshot produced by a QuestDBBackup.
+    # The operator provisions the PVC from this snapshot and triggers QuestDB
+    # checkpoint recovery on first boot.
+    snapshotName: questdb-sample-backup

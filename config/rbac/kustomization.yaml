@@ -22,13 +22,13 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the questdb-operator itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
-- questdbsnapshotschedule_admin_role.yaml
-- questdbsnapshotschedule_editor_role.yaml
-- questdbsnapshotschedule_viewer_role.yaml
+- questdbbackupschedule_admin_role.yaml
+- questdbbackupschedule_editor_role.yaml
+- questdbbackupschedule_viewer_role.yaml
+- questdbbackup_admin_role.yaml
+- questdbbackup_editor_role.yaml
+- questdbbackup_viewer_role.yaml
 - questdb_admin_role.yaml
 - questdb_editor_role.yaml
 - questdb_viewer_role.yaml
-- questdbsnapshot_admin_role.yaml
-- questdbsnapshot_editor_role.yaml
-- questdbsnapshot_viewer_role.yaml
 

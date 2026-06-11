@@ -1,0 +1,19 @@
+apiVersion: crd.questdb.io/v1beta2
+kind: QuestDB
+metadata:
+  name: questdb-sample
+  labels:
+    app.kubernetes.io/name: questdb-operator
+spec:
+  # image defaults to the operator's pinned OSS image when omitted.
+  # image: questdb/questdb:<tag>
+  volume:
+    size: 5Gi
+  # auth omitted: the operator generates pg-wire credentials in Secret
+  # "questdb-sample-credentials" (keys QDB_PG_USER / QDB_PG_PASSWORD).
+  service:
+    type: ClusterIP
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi

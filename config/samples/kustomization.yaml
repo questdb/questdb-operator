@@ -1,6 +1,6 @@
 ## Append samples of your project ##
 resources:
-- crd_v1beta1_questdbsnapshot.yaml
-- crd_v1beta1_questdb.yaml
-- crd_v1beta1_questdbsnapshotschedule.yaml
+- crd_v1beta2_questdb.yaml
+- crd_v1beta2_questdbbackup.yaml
+- crd_v1beta2_questdbbackupschedule.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

@@ -1,0 +1,10 @@
+apiVersion: crd.questdb.io/v1beta2
+kind: QuestDBBackupSchedule
+metadata:
+  name: questdb-sample-schedule
+spec:
+  schedule: "0 2 * * *"   # daily at 02:00 UTC
+  retention: 7
+  backup:
+    questdbName: questdb-sample
+    method: VolumeSnapshot

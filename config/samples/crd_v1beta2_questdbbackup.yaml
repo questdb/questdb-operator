@@ -1,0 +1,8 @@
+apiVersion: crd.questdb.io/v1beta2
+kind: QuestDBBackup
+metadata:
+  name: questdb-sample-backup
+spec:
+  questdbName: questdb-sample
+  method: VolumeSnapshot
+  # volumeSnapshotClassName: csi-hostpath-snapclass  # omit to use the cluster default

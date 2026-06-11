@@ -21,64 +21,114 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
+	crdv1beta2 "github.com/questdb/questdb-operator/api/v1beta2"
 )
 
 var _ = Describe("QuestDB Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+	const (
+		name = "qdb-create"
+		ns   = "default"
+	)
+	ctx := context.Background()
+	var reconciler *QuestDBReconciler
 
-		ctx := context.Background()
+	key := types.NamespacedName{Name: name, Namespace: ns}
 
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+	BeforeEach(func() {
+		reconciler = &QuestDBReconciler{
+			Client:   k8sClient,
+			Scheme:   k8sClient.Scheme(),
+			Recorder: record.NewFakeRecorder(100),
 		}
-		questdb := &crdv1beta1.QuestDB{}
+	})
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind QuestDB")
-			err := k8sClient.Get(ctx, typeNamespacedName, questdb)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &crdv1beta1.QuestDB{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
-		})
+	AfterEach(func() {
+		// envtest has no garbage collector, so delete children explicitly. Distinct names per
+		// spec avoid colliding on the (immutable) PVC, which lingers under a protection finalizer.
+		for _, n := range []string{"qdb-create", "qdb-restore"} {
+			_ = k8sClient.Delete(ctx, &crdv1beta2.QuestDB{ObjectMeta: metav1.ObjectMeta{Name: n, Namespace: ns}})
+			_ = k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: n + "-credentials", Namespace: ns}})
+			_ = k8sClient.Delete(ctx, &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: n, Namespace: ns}})
+			_ = k8sClient.Delete(ctx, &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: n, Namespace: ns}})
+			_ = k8sClient.Delete(ctx, &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: n, Namespace: ns}})
+		}
+	})
 
-		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &crdv1beta1.QuestDB{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+	It("generates credentials and creates the StatefulSet, Service, and PVC", func() {
+		qdb := &crdv1beta2.QuestDB{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+			Spec: crdv1beta2.QuestDBSpec{
+				Image:  crdv1beta2.DefaultImage,
+				Volume: crdv1beta2.QuestDBVolumeSpec{Size: resource.MustParse("1Gi")},
+			},
+		}
+		Expect(k8sClient.Create(ctx, qdb)).To(Succeed())
 
-			By("Cleanup the specific resource instance QuestDB")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
-		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &QuestDBReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
+		Expect(err).NotTo(HaveOccurred())
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
-		})
+		By("generating a credentials Secret")
+		secret := &corev1.Secret{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name + "-credentials", Namespace: ns}, secret)).To(Succeed())
+		Expect(secret.Data).To(HaveKey(envPgUser))
+		Expect(secret.Data).To(HaveKey(envPgPassword))
+		Expect(secret.Data[envPgPassword]).NotTo(BeEmpty())
+
+		By("creating the StatefulSet wired to the credentials Secret")
+		sts := &appsv1.StatefulSet{}
+		Expect(k8sClient.Get(ctx, key, sts)).To(Succeed())
+		Expect(*sts.Spec.Replicas).To(Equal(int32(1)))
+		Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(1))
+		Expect(sts.Spec.Template.Spec.Containers[0].Name).To(Equal(containerName))
+		Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal(crdv1beta2.DefaultImage))
+		Expect(sts.Spec.Template.Spec.Containers[0].EnvFrom).To(HaveLen(1))
+		Expect(sts.Spec.Template.Spec.Containers[0].EnvFrom[0].SecretRef.Name).To(Equal(name + "-credentials"))
+		Expect(sts.Spec.Template.Annotations).To(HaveKey(CredentialsHashAnnotation))
+
+		By("creating the Service with the QuestDB ports")
+		svc := &corev1.Service{}
+		Expect(k8sClient.Get(ctx, key, svc)).To(Succeed())
+		Expect(svc.Spec.Ports).To(HaveLen(4))
+
+		By("creating the data PVC")
+		pvc := &corev1.PersistentVolumeClaim{}
+		Expect(k8sClient.Get(ctx, key, pvc)).To(Succeed())
+
+		By("recording the effective credentials Secret in status")
+		Expect(k8sClient.Get(ctx, key, qdb)).To(Succeed())
+		Expect(qdb.Status.CredentialsSecretName).To(Equal(name + "-credentials"))
+	})
+
+	It("wires a restore initContainer when spec.volume.snapshotName is set", func() {
+		rkey := types.NamespacedName{Name: "qdb-restore", Namespace: ns}
+		qdb := &crdv1beta2.QuestDB{
+			ObjectMeta: metav1.ObjectMeta{Name: rkey.Name, Namespace: ns},
+			Spec: crdv1beta2.QuestDBSpec{
+				Image:  crdv1beta2.DefaultImage,
+				Volume: crdv1beta2.QuestDBVolumeSpec{Size: resource.MustParse("1Gi"), SnapshotName: "some-snapshot"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, qdb)).To(Succeed())
+
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: rkey})
+		Expect(err).NotTo(HaveOccurred())
+
+		sts := &appsv1.StatefulSet{}
+		Expect(k8sClient.Get(ctx, rkey, sts)).To(Succeed())
+		Expect(sts.Spec.Template.Spec.InitContainers).To(HaveLen(1))
+		Expect(sts.Spec.Template.Spec.InitContainers[0].Name).To(Equal("restore-trigger"))
+
+		pvc := &corev1.PersistentVolumeClaim{}
+		Expect(k8sClient.Get(ctx, rkey, pvc)).To(Succeed())
+		Expect(pvc.Spec.DataSource).NotTo(BeNil())
+		Expect(pvc.Spec.DataSource.Name).To(Equal("some-snapshot"))
 	})
 })

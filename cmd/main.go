@@ -35,9 +35,11 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	crdv1beta1 "github.com/questdb/questdb-operator/api/v1beta1"
+	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+
+	crdv1beta2 "github.com/questdb/questdb-operator/api/v1beta2"
 	"github.com/questdb/questdb-operator/internal/controller"
-	webhookv1beta1 "github.com/questdb/questdb-operator/internal/webhook/v1beta1"
+	webhookv1beta2 "github.com/questdb/questdb-operator/internal/webhook/v1beta2"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -49,7 +51,8 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(crdv1beta1.AddToScheme(scheme))
+	utilruntime.Must(crdv1beta2.AddToScheme(scheme))
+	utilruntime.Must(volumesnapshotv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -179,45 +182,42 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.QuestDBSnapshotReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "QuestDBSnapshot")
-		os.Exit(1)
-	}
 	if err := (&controller.QuestDBReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("questdb-controller"), //nolint:staticcheck
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "QuestDB")
 		os.Exit(1)
 	}
-	if err := (&controller.QuestDBSnapshotScheduleReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+	if err := (&controller.QuestDBBackupReconciler{
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Recorder:     mgr.GetEventRecorderFor("questdbbackup-controller"), //nolint:staticcheck
+		Checkpointer: controller.NewCheckpointer(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "QuestDBSnapshotSchedule")
+		setupLog.Error(err, "Failed to create controller", "controller", "QuestDBBackup")
 		os.Exit(1)
 	}
-	// nolint:goconst
-	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err := webhookv1beta1.SetupQuestDBSnapshotWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "Failed to create webhook", "webhook", "QuestDBSnapshot")
-			os.Exit(1)
-		}
+	if err := (&controller.QuestDBBackupScheduleReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("questdbbackupschedule-controller"), //nolint:staticcheck
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "QuestDBBackupSchedule")
+		os.Exit(1)
 	}
-	// nolint:goconst
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err := webhookv1beta1.SetupQuestDBWebhookWithManager(mgr); err != nil {
+		if err := webhookv1beta2.SetupQuestDBWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "Failed to create webhook", "webhook", "QuestDB")
 			os.Exit(1)
 		}
-	}
-	// nolint:goconst
-	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err := webhookv1beta1.SetupQuestDBSnapshotScheduleWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "Failed to create webhook", "webhook", "QuestDBSnapshotSchedule")
+		if err := webhookv1beta2.SetupQuestDBBackupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to create webhook", "webhook", "QuestDBBackup")
+			os.Exit(1)
+		}
+		if err := webhookv1beta2.SetupQuestDBBackupScheduleWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to create webhook", "webhook", "QuestDBBackupSchedule")
 			os.Exit(1)
 		}
 	}
