@@ -22,7 +22,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/robfig/cron/v3"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -36,12 +35,6 @@ import (
 
 	crdv1beta2 "github.com/questdb/questdb-operator/api/v1beta2"
 )
-
-// defaultRetention is the number of recent successful backups kept when spec.retention is unset.
-const defaultRetention = 7
-
-// cronParser parses standard 5-field cron expressions (minute hour dom month dow), in UTC.
-var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
 // QuestDBBackupScheduleReconciler reconciles a QuestDBBackupSchedule object.
 type QuestDBBackupScheduleReconciler struct {
@@ -65,13 +58,13 @@ func (r *QuestDBBackupScheduleReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	cronSchedule, err := cronParser.Parse(schedule.Spec.Schedule)
+	cronSchedule, err := crdv1beta2.ScheduleCronParser.Parse(schedule.Spec.Schedule)
 	if err != nil {
 		r.Recorder.Event(schedule, corev1.EventTypeWarning, "InvalidSchedule", fmt.Sprintf("invalid cron schedule %q: %v", schedule.Spec.Schedule, err))
 		return r.updateStatus(ctx, schedule, nil, metav1.Condition{
 			Type: "Ready", Status: metav1.ConditionFalse, Reason: "InvalidSchedule",
 			Message: "cron schedule is invalid", ObservedGeneration: schedule.Generation,
-		})
+		}, nil)
 	}
 
 	backups, err := r.orderedChildBackups(ctx, schedule)
@@ -120,10 +113,21 @@ func (r *QuestDBBackupScheduleReconciler) Reconcile(ctx context.Context, req ctr
 		ready.Reason = "Suspended"
 		ready.Message = "schedule is suspended"
 	}
-	if _, err := r.updateStatus(ctx, schedule, latest, ready, withLastBackupTime(created, now)); err != nil {
+	var lastBackup *metav1.Time
+	if created {
+		t := metav1.NewTime(now)
+		lastBackup = &t
+	}
+	if _, err := r.updateStatus(ctx, schedule, latest, ready, lastBackup); err != nil {
 		return ctrl.Result{}, err
 	}
 
+	// A suspended schedule needs no cron-cadence requeue: the spec watch re-triggers when it is
+	// unsuspended, and the child watch re-triggers on backup changes (for pruning). Requeuing on the
+	// cron interval would just be periodic no-op reconciles.
+	if schedule.Spec.Suspend {
+		return ctrl.Result{}, nil
+	}
 	requeue := cronSchedule.Next(now).Sub(now)
 	if requeue <= 0 {
 		requeue = time.Second
@@ -162,7 +166,7 @@ func (r *QuestDBBackupScheduleReconciler) pruneBackups(ctx context.Context, sche
 		return nil
 	}
 	if retention == 0 {
-		retention = defaultRetention
+		retention = crdv1beta2.DefaultRetention
 	}
 	var kept int32
 	for _, b := range ordered {
@@ -192,33 +196,30 @@ func (r *QuestDBBackupScheduleReconciler) orderedChildBackups(ctx context.Contex
 			owned = append(owned, &list.Items[i])
 		}
 	}
+	// Newest first, with a deterministic Name tiebreak for same-timestamp backups (schedule names are
+	// second-granularity, so ties are common); this matches the backup controller's isOlder ordering
+	// so prune and active-backup selection agree on which backup is newest/oldest.
 	sort.SliceStable(owned, func(i, j int) bool {
-		return owned[j].CreationTimestamp.Before(&owned[i].CreationTimestamp)
+		ti, tj := owned[i].CreationTimestamp, owned[j].CreationTimestamp
+		if ti.Equal(&tj) {
+			return owned[i].Name > owned[j].Name
+		}
+		return tj.Before(&ti)
 	})
 	return owned, nil
 }
 
-type statusOption func(*crdv1beta2.QuestDBBackupSchedule, time.Time)
-
-func withLastBackupTime(created bool, now time.Time) statusOption {
-	return func(s *crdv1beta2.QuestDBBackupSchedule, _ time.Time) {
-		if created {
-			t := metav1.NewTime(now)
-			s.Status.LastBackupTime = &t
-		}
-	}
-}
-
-// updateStatus refreshes schedule status (mirroring the latest backup) and persists only on change.
-func (r *QuestDBBackupScheduleReconciler) updateStatus(ctx context.Context, schedule *crdv1beta2.QuestDBBackupSchedule, latest *crdv1beta2.QuestDBBackup, ready metav1.Condition, opts ...statusOption) (ctrl.Result, error) {
+// updateStatus refreshes schedule status (mirroring the latest backup, optionally stamping
+// LastBackupTime) and persists only on change.
+func (r *QuestDBBackupScheduleReconciler) updateStatus(ctx context.Context, schedule *crdv1beta2.QuestDBBackupSchedule, latest *crdv1beta2.QuestDBBackup, ready metav1.Condition, lastBackupTime *metav1.Time) (ctrl.Result, error) {
 	before := schedule.Status.DeepCopy()
 	if latest != nil {
 		schedule.Status.LastBackupName = latest.Name
 		schedule.Status.LastBackupPhase = latest.Status.Phase
 	}
 	apimeta.SetStatusCondition(&schedule.Status.Conditions, ready)
-	for _, opt := range opts {
-		opt(schedule, r.now())
+	if lastBackupTime != nil {
+		schedule.Status.LastBackupTime = lastBackupTime
 	}
 	if !apiequality.Semantic.DeepEqual(before, &schedule.Status) {
 		if err := r.Status().Update(ctx, schedule); err != nil {

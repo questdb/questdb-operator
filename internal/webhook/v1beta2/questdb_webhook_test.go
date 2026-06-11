@@ -102,6 +102,17 @@ var _ = Describe("QuestDB Webhook", func() {
 		Expect(k8sClient.Create(ctx, qdb)).NotTo(Succeed())
 	})
 
+	It("rejects an extraEnv that overrides a reserved key via its QDB_ env form", func() {
+		qdb := &crdv1beta2.QuestDB{
+			ObjectMeta: metav1.ObjectMeta{Name: "wh-envbind", Namespace: ns},
+			Spec: crdv1beta2.QuestDBSpec{
+				Volume:   crdv1beta2.QuestDBVolumeSpec{Size: resource.MustParse("1Gi")},
+				ExtraEnv: []corev1.EnvVar{{Name: "QDB_PG_NET_BIND_TO", Value: "0.0.0.0:9999"}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, qdb)).NotTo(Succeed())
+	})
+
 	It("rejects a serverConfig that overrides an operator-managed key", func() {
 		qdb := &crdv1beta2.QuestDB{
 			ObjectMeta: metav1.ObjectMeta{Name: "wh-conf", Namespace: ns},

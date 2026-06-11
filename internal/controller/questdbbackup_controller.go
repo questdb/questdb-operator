@@ -45,6 +45,11 @@ const (
 	checkpointHoldDeadline = 15 * time.Minute
 	// snapshotPollInterval is how often a not-yet-ready VolumeSnapshot is re-checked.
 	snapshotPollInterval = 10 * time.Second
+	// checkpointReleaseBackoff is the slower retry cadence for CHECKPOINT RELEASE once the hold
+	// deadline has passed, so a long database outage retries the (idempotent) release without
+	// busy-looping. The release obligation is never abandoned: a Succeeded backup always means the
+	// checkpoint was released.
+	checkpointReleaseBackoff = time.Minute
 	// dbOpTimeout bounds a single CHECKPOINT operation against QuestDB.
 	dbOpTimeout = 30 * time.Second
 	// deleteReleaseDeadline bounds how long deletion waits to release a checkpoint before the
@@ -109,6 +114,14 @@ func (r *QuestDBBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	qdb := &crdv1beta2.QuestDB{}
 	if err := r.Get(ctx, types.NamespacedName{Name: backup.Spec.QuestDBName, Namespace: backup.Namespace}, qdb); err != nil {
 		if apierrors.IsNotFound(err) {
+			// If we hold a checkpoint, a NotFound may be a transient cache miss or a recreate; the
+			// open checkpoint can only be released by reaching the database, so requeue and retry
+			// until the hold deadline rather than failing terminally and stranding it.
+			if backup.CheckpointOutstanding() && !r.holdDeadlineExceeded(backup) {
+				r.Recorder.Event(backup, corev1.EventTypeWarning, "QuestDBNotFound",
+					fmt.Sprintf("QuestDB %q not found while a checkpoint is outstanding; retrying", backup.Spec.QuestDBName))
+				return ctrl.Result{RequeueAfter: snapshotPollInterval}, nil
+			}
 			return r.abort(ctx, backup, nil, "QuestDBNotFound", fmt.Sprintf("QuestDB %q not found", backup.Spec.QuestDBName))
 		}
 		return ctrl.Result{}, err
@@ -129,24 +142,51 @@ func (r *QuestDBBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 // reconcilePending issues CHECKPOINT CREATE and advances to CheckpointCreated.
 func (r *QuestDBBackupReconciler) reconcilePending(ctx context.Context, backup *crdv1beta2.QuestDBBackup, qdb *crdv1beta2.QuestDB) (ctrl.Result, error) {
+	// Fail fast if the data PVC the snapshot will source from is absent: opening a checkpoint first
+	// would hold the database in checkpoint mode for the whole hold deadline waiting for a snapshot
+	// that can never succeed.
+	pvc := &corev1.PersistentVolumeClaim{}
+	if err := r.Get(ctx, types.NamespacedName{Name: dataPVCName(backup.Spec.QuestDBName), Namespace: backup.Namespace}, pvc); err != nil {
+		if apierrors.IsNotFound(err) {
+			r.Recorder.Event(backup, corev1.EventTypeWarning, "WaitingForPVC",
+				fmt.Sprintf("data PVC %q not found yet", dataPVCName(backup.Spec.QuestDBName)))
+			return r.requeueOrAbort(ctx, backup, qdb, "PVCNotFound", "data PVC did not appear before the deadline")
+		}
+		return ctrl.Result{}, err
+	}
+
 	target, err := r.resolveTarget(ctx, qdb)
 	if err != nil {
 		r.Recorder.Event(backup, corev1.EventTypeWarning, "WaitingForQuestDB", err.Error())
-		return ctrl.Result{RequeueAfter: snapshotPollInterval}, nil
+		return r.requeueOrAbort(ctx, backup, qdb, "WaitingForQuestDB", err.Error())
+	}
+
+	// Record the release obligation BEFORE issuing CHECKPOINT CREATE. If the process crashes or the
+	// status write fails after the database call, the persisted CheckpointCreatedAt still drives a
+	// release on delete/abort (CHECKPOINT RELEASE is idempotent on QuestDB, so recording it slightly
+	// ahead of the actual checkpoint is safe), and it anchors the hold deadline.
+	if backup.Status.CheckpointCreatedAt == nil {
+		now := metav1.Now()
+		backup.Status.CheckpointCreatedAt = &now
+		setBackupCondition(backup, metav1.ConditionFalse, "CheckpointCreating", "opening QuestDB checkpoint")
+		if err := r.Status().Update(ctx, backup); err != nil {
+			return ctrl.Result{}, err
+		}
+		// Fall through and issue CHECKPOINT CREATE in this same reconcile; the obligation is already
+		// persisted, so a crash before the phase advances still leaves a release record.
 	}
 
 	opCtx, cancel := context.WithTimeout(ctx, dbOpTimeout)
 	defer cancel()
 	if err := r.Checkpointer.Create(opCtx, target); err != nil {
-		// The pod may not be reachable yet; retry rather than fail.
+		// The pod may not be reachable yet; retry, but bound it so a permanently-unreachable database
+		// can't keep this backup the perpetual "active" one and block every sibling backup forever.
 		r.Recorder.Event(backup, corev1.EventTypeWarning, "CheckpointCreateFailed", err.Error())
-		return ctrl.Result{RequeueAfter: snapshotPollInterval}, nil
+		return r.requeueOrAbort(ctx, backup, qdb, "CheckpointCreateFailed", err.Error())
 	}
 
-	now := metav1.Now()
-	backup.Status.CheckpointCreatedAt = &now
 	backup.Status.Phase = crdv1beta2.BackupPhaseCheckpointCreated
-	setBackupCondition(backup, conditionBackupReady, metav1.ConditionFalse, "CheckpointCreated", "checkpoint created; snapshotting volume")
+	setBackupCondition(backup, metav1.ConditionFalse, "CheckpointCreated", "checkpoint created; snapshotting volume")
 	if err := r.Status().Update(ctx, backup); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -154,10 +194,34 @@ func (r *QuestDBBackupReconciler) reconcilePending(ctx context.Context, backup *
 	return ctrl.Result{Requeue: true}, nil
 }
 
+// holdDeadlineExceeded reports whether the checkpoint hold deadline has passed, anchored on when the
+// checkpoint was opened (or, before that, when the backup was created).
+func (r *QuestDBBackupReconciler) holdDeadlineExceeded(backup *crdv1beta2.QuestDBBackup) bool {
+	anchor := backup.CreationTimestamp.Time
+	if backup.Status.CheckpointCreatedAt != nil {
+		anchor = backup.Status.CheckpointCreatedAt.Time
+	}
+	return !anchor.IsZero() && time.Since(anchor) > checkpointHoldDeadline
+}
+
+// requeueOrAbort requeues a still-progressing backup, or aborts it once the hold deadline has passed
+// so a stuck backup stops blocking siblings and any outstanding checkpoint is released.
+func (r *QuestDBBackupReconciler) requeueOrAbort(ctx context.Context, backup *crdv1beta2.QuestDBBackup, qdb *crdv1beta2.QuestDB, reason, msg string) (ctrl.Result, error) {
+	if r.holdDeadlineExceeded(backup) {
+		return r.abort(ctx, backup, qdb, reason, "deadline exceeded: "+msg)
+	}
+	return ctrl.Result{RequeueAfter: snapshotPollInterval}, nil
+}
+
 // reconcileCheckpointCreated creates the VolumeSnapshot and waits for it to become ready.
 func (r *QuestDBBackupReconciler) reconcileCheckpointCreated(ctx context.Context, backup *crdv1beta2.QuestDBBackup, qdb *crdv1beta2.QuestDB) (ctrl.Result, error) {
 	vs, err := r.ensureVolumeSnapshot(ctx, backup)
 	if err != nil {
+		// A persistent snapshot-API error (e.g. the VolumeSnapshot CRD/RBAC is missing) must still be
+		// bounded by the hold deadline, otherwise the checkpoint stays open indefinitely.
+		if r.holdDeadlineExceeded(backup) {
+			return r.abort(ctx, backup, qdb, "SnapshotError", "volume snapshot could not be created before the checkpoint hold deadline: "+err.Error())
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -178,7 +242,7 @@ func (r *QuestDBBackupReconciler) reconcileCheckpointCreated(ctx context.Context
 	}
 
 	// Bound how long the checkpoint stays open while waiting for the snapshot.
-	if backup.Status.CheckpointCreatedAt != nil && time.Since(backup.Status.CheckpointCreatedAt.Time) > checkpointHoldDeadline {
+	if r.holdDeadlineExceeded(backup) {
 		return r.abort(ctx, backup, qdb, "SnapshotTimeout", "volume snapshot did not become ready before the checkpoint hold deadline")
 	}
 
@@ -194,25 +258,22 @@ func (r *QuestDBBackupReconciler) reconcileCheckpointCreated(ctx context.Context
 func (r *QuestDBBackupReconciler) reconcileSnapshotCreated(ctx context.Context, backup *crdv1beta2.QuestDBBackup, qdb *crdv1beta2.QuestDB) (ctrl.Result, error) {
 	if backup.Status.CheckpointReleasedAt == nil {
 		if err := r.releaseCheckpoint(ctx, qdb); err != nil {
-			// The snapshot is already captured and usable, so a failing release (e.g. the database
-			// is unreachable) must not retry forever. Bound it by the same hold deadline used while
-			// waiting for the snapshot: past the deadline, give up releasing and complete the backup,
-			// surfacing the abandoned release so an operator can intervene. (If the database is gone
-			// entirely, its checkpoint is gone with it.)
-			if backup.Status.CheckpointCreatedAt != nil && time.Since(backup.Status.CheckpointCreatedAt.Time) > checkpointHoldDeadline {
-				r.Recorder.Event(backup, corev1.EventTypeWarning, "CheckpointReleaseAbandoned",
-					"giving up releasing checkpoint after the hold deadline: "+err.Error())
-			} else {
-				r.Recorder.Event(backup, corev1.EventTypeWarning, "CheckpointReleaseFailed", err.Error())
-				return ctrl.Result{RequeueAfter: snapshotPollInterval}, nil
+			// The snapshot is captured, but the backup must not reach a terminal Succeeded state with
+			// the checkpoint still open. Keep retrying the (idempotent) release until the database is
+			// reachable; back off past the hold deadline so a long outage doesn't busy-loop. The
+			// obligation is only otherwise cleared on delete (reconcileDelete).
+			r.Recorder.Event(backup, corev1.EventTypeWarning, "CheckpointReleaseFailed", err.Error())
+			requeue := snapshotPollInterval
+			if r.holdDeadlineExceeded(backup) {
+				requeue = checkpointReleaseBackoff
 			}
-		} else {
-			now := metav1.Now()
-			backup.Status.CheckpointReleasedAt = &now
+			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
+		now := metav1.Now()
+		backup.Status.CheckpointReleasedAt = &now
 	}
 	backup.Status.Phase = crdv1beta2.BackupPhaseSucceeded
-	setBackupCondition(backup, conditionBackupReady, metav1.ConditionTrue, "BackupComplete", "backup complete")
+	setBackupCondition(backup, metav1.ConditionTrue, "BackupComplete", "backup complete")
 	if err := r.Status().Update(ctx, backup); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -263,7 +324,7 @@ func (r *QuestDBBackupReconciler) abort(ctx context.Context, backup *crdv1beta2.
 		backup.Status.CheckpointReleasedAt = &now
 	}
 	backup.Status.Phase = crdv1beta2.BackupPhaseFailed
-	setBackupCondition(backup, conditionBackupReady, metav1.ConditionFalse, reason, msg)
+	setBackupCondition(backup, metav1.ConditionFalse, reason, msg)
 	if err := r.Status().Update(ctx, backup); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -311,7 +372,7 @@ func (r *QuestDBBackupReconciler) ensureVolumeSnapshot(ctx context.Context, back
 		return nil, err
 	}
 
-	pvcName := backup.Spec.QuestDBName // the QuestDB controller names the data PVC after the QuestDB
+	pvcName := dataPVCName(backup.Spec.QuestDBName)
 	vs = &volumesnapshotv1.VolumeSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      backup.Name,
@@ -364,9 +425,9 @@ func isOlder(a, b *crdv1beta2.QuestDBBackup) bool {
 	return a.CreationTimestamp.Before(&b.CreationTimestamp)
 }
 
-func setBackupCondition(backup *crdv1beta2.QuestDBBackup, condType string, status metav1.ConditionStatus, reason, msg string) {
+func setBackupCondition(backup *crdv1beta2.QuestDBBackup, status metav1.ConditionStatus, reason, msg string) {
 	apimeta.SetStatusCondition(&backup.Status.Conditions, metav1.Condition{
-		Type:               condType,
+		Type:               conditionBackupReady,
 		Status:             status,
 		Reason:             reason,
 		Message:            msg,

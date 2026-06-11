@@ -17,8 +17,19 @@ limitations under the License.
 package v1beta2
 
 import (
+	"github.com/robfig/cron/v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// DefaultRetention is the number of most-recent successful backups kept when spec.retention is unset
+// (zero). A negative retention disables pruning. Shared by the defaulting webhook and the controller
+// so the two cannot drift.
+const DefaultRetention int32 = 7
+
+// ScheduleCronParser parses the standard 5-field cron expressions (minute hour dom month dow) accepted
+// in spec.schedule, in UTC. Shared by the validating webhook and the controller so an expression the
+// webhook admits is exactly one the controller can parse.
+var ScheduleCronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
 // QuestDBBackupScheduleSpec defines the desired state of QuestDBBackupSchedule.
 type QuestDBBackupScheduleSpec struct {

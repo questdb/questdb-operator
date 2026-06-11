@@ -36,14 +36,14 @@ func credsSecret(password string) *corev1.Secret {
 }
 
 func TestGeneratePassword(t *testing.T) {
-	p, err := generatePassword(24)
+	p, err := generatePassword()
 	if err != nil {
 		t.Fatalf("generatePassword: %v", err)
 	}
 	if len(p) != 24 {
 		t.Errorf("len = %d, want 24", len(p))
 	}
-	if p2, _ := generatePassword(24); p == p2 {
+	if p2, _ := generatePassword(); p == p2 {
 		t.Errorf("expected two generated passwords to differ")
 	}
 }

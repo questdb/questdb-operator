@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
@@ -83,6 +84,19 @@ var _ = Describe("QuestDBBackup Controller", func() {
 			Data:       map[string][]byte{envPgUser: []byte("admin"), envPgPassword: []byte("secret")},
 		}
 		Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, secret))).To(Succeed())
+
+		// The QuestDB controller creates the data PVC; the backup controller pre-flights its existence
+		// before opening a checkpoint, so the test must provide it.
+		pvc := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{Name: qdbName, Namespace: ns},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")},
+				},
+			},
+		}
+		Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, pvc))).To(Succeed())
 
 		fake = &fakeCheckpointer{}
 		reconciler = &QuestDBBackupReconciler{
@@ -166,5 +180,48 @@ var _ = Describe("QuestDBBackup Controller", func() {
 		Expect(b.Status.Phase).To(Equal(crdv1beta2.BackupPhaseFailed))
 		Expect(b.Status.CheckpointReleasedAt).NotTo(BeNil())
 		Expect(fake.releases()).To(BeNumerically(">=", 1))
+	})
+
+	It("aborts (and stops blocking) a backup whose CHECKPOINT CREATE keeps failing past the deadline", func() {
+		fake.createErr = fmt.Errorf("connection refused")
+		newBackup("b4")
+		Expect(reconcileBackup("b4")).To(Succeed()) // finalizer
+		Expect(reconcileBackup("b4")).To(Succeed()) // record obligation + Create fails -> requeue
+
+		// The release obligation is recorded even though CHECKPOINT CREATE failed, and the backup has
+		// not advanced past Pending (phase is still the empty/Pending state).
+		b := getBackup("b4")
+		Expect(b.Status.Phase).NotTo(Equal(crdv1beta2.BackupPhaseCheckpointCreated))
+		Expect(b.Status.CheckpointCreatedAt).NotTo(BeNil())
+
+		// Past the deadline the backup must reach a terminal state so it no longer blocks siblings.
+		old := metav1.NewTime(time.Now().Add(-2 * checkpointHoldDeadline))
+		b.Status.CheckpointCreatedAt = &old
+		Expect(k8sClient.Status().Update(ctx, b)).To(Succeed())
+
+		Expect(reconcileBackup("b4")).To(Succeed())
+		Expect(getBackup("b4").Status.Phase).To(Equal(crdv1beta2.BackupPhaseFailed))
+	})
+
+	It("does not mark Succeeded while CHECKPOINT RELEASE is failing", func() {
+		newBackup("b5")
+		Expect(reconcileBackup("b5")).To(Succeed()) // finalizer
+		Expect(reconcileBackup("b5")).To(Succeed()) // checkpoint created
+		Expect(reconcileBackup("b5")).To(Succeed()) // create VolumeSnapshot
+		markSnapshotReady("b5")
+		Expect(reconcileBackup("b5")).To(Succeed()) // -> SnapshotCreated
+		Expect(getBackup("b5").Status.Phase).To(Equal(crdv1beta2.BackupPhaseSnapshotCreated))
+
+		fake.releaseErr = fmt.Errorf("connection refused")
+		Expect(reconcileBackup("b5")).To(Succeed()) // release fails -> stay SnapshotCreated, not Succeeded
+		b := getBackup("b5")
+		Expect(b.Status.Phase).To(Equal(crdv1beta2.BackupPhaseSnapshotCreated))
+		Expect(b.Status.CheckpointReleasedAt).To(BeNil())
+
+		fake.releaseErr = nil
+		Expect(reconcileBackup("b5")).To(Succeed()) // release succeeds -> Succeeded
+		b = getBackup("b5")
+		Expect(b.Status.Phase).To(Equal(crdv1beta2.BackupPhaseSucceeded))
+		Expect(b.Status.CheckpointReleasedAt).NotTo(BeNil())
 	})
 })

@@ -20,19 +20,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/robfig/cron/v3"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	crdv1beta2 "github.com/questdb/questdb-operator/api/v1beta2"
 )
-
-// scheduleRetentionDefault is applied when spec.retention is unset.
-const scheduleRetentionDefault int32 = 7
-
-// scheduleCronParser parses standard 5-field cron expressions.
-var scheduleCronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
 // nolint:unused
 var questdbbackupschedulelog = logf.Log.WithName("questdbbackupschedule-resource")
@@ -53,7 +46,7 @@ type QuestDBBackupScheduleCustomDefaulter struct{}
 // Default applies defaults to a QuestDBBackupSchedule.
 func (d *QuestDBBackupScheduleCustomDefaulter) Default(_ context.Context, obj *crdv1beta2.QuestDBBackupSchedule) error {
 	if obj.Spec.Retention == 0 {
-		obj.Spec.Retention = scheduleRetentionDefault
+		obj.Spec.Retention = crdv1beta2.DefaultRetention
 	}
 	if obj.Spec.Backup.Method == "" {
 		obj.Spec.Backup.Method = crdv1beta2.BackupMethodVolumeSnapshot
@@ -85,7 +78,7 @@ func (v *QuestDBBackupScheduleCustomValidator) ValidateDelete(_ context.Context,
 }
 
 func validateSchedule(obj *crdv1beta2.QuestDBBackupSchedule) error {
-	if _, err := scheduleCronParser.Parse(obj.Spec.Schedule); err != nil {
+	if _, err := crdv1beta2.ScheduleCronParser.Parse(obj.Spec.Schedule); err != nil {
 		return fmt.Errorf("spec.schedule is not a valid cron expression: %w", err)
 	}
 	if obj.Spec.Backup.QuestDBName == "" {

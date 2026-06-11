@@ -45,6 +45,11 @@ func questdbImage(qdb *crdv1beta2.QuestDB) string {
 	return crdv1beta2.DefaultImage
 }
 
+// dataPVCName is the name of a QuestDB's data PersistentVolumeClaim. The data PVC is named after the
+// QuestDB; backups snapshot this PVC by the same name, so both sites route through this helper rather
+// than repeating the bare name and risking drift if the naming scheme ever changes.
+func dataPVCName(questdbName string) string { return questdbName }
+
 // labelsForQuestDB returns the selector/identity labels for a QuestDB's child objects.
 func labelsForQuestDB(name string) map[string]string {
 	return map[string]string{
@@ -142,7 +147,7 @@ func (r *QuestDBReconciler) desiredService(qdb *crdv1beta2.QuestDB) (*corev1.Ser
 func (r *QuestDBReconciler) desiredPVC(qdb *crdv1beta2.QuestDB) (*corev1.PersistentVolumeClaim, error) {
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      qdb.Name,
+			Name:      dataPVCName(qdb.Name),
 			Namespace: qdb.Namespace,
 			Labels:    labelsForQuestDB(qdb.Name),
 		},
@@ -178,7 +183,7 @@ func (r *QuestDBReconciler) desiredStatefulSet(qdb *crdv1beta2.QuestDB, cm *core
 	volumeMounts := []corev1.VolumeMount{{Name: "data", MountPath: dataDir}}
 	volumes := []corev1.Volume{{
 		Name:         "data",
-		VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: qdb.Name}},
+		VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: dataPVCName(qdb.Name)}},
 	}}
 
 	if cm != nil {
@@ -233,7 +238,7 @@ func (r *QuestDBReconciler) desiredStatefulSet(qdb *crdv1beta2.QuestDB, cm *core
 		initContainers = append(initContainers, corev1.Container{
 			Name:    "restore-trigger",
 			Image:   questdbImage(qdb),
-			Command: []string{"sh", "-c", fmt.Sprintf("if [ ! -f %s ]; then touch %s && touch %s; fi", sentinel, restoreMarker, sentinel)},
+			Command: []string{"sh", "-c", fmt.Sprintf("if [ ! -f '%s' ]; then touch '%s' && touch '%s'; fi", sentinel, restoreMarker, sentinel)},
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "data", MountPath: dataDir},
 			},

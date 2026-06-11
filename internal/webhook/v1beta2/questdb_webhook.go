@@ -42,6 +42,17 @@ var reservedConfigKeys = map[string]struct{}{
 	"line.tcp.net.bind.to": {},
 }
 
+// reservedEnvKeys maps each reserved config key's QuestDB env-var form (QDB_<KEY>, dots->underscores,
+// uppercased) back to the config key. QuestDB reads settings from these env vars too, so the same
+// keys must be blocked in spec.extraEnv — otherwise a user could bypass the serverConfig guard.
+var reservedEnvKeys = func() map[string]string {
+	m := make(map[string]string, len(reservedConfigKeys))
+	for k := range reservedConfigKeys {
+		m["QDB_"+strings.ToUpper(strings.ReplaceAll(k, ".", "_"))] = k
+	}
+	return m
+}()
+
 // nolint:unused
 var questdblog = logf.Log.WithName("questdb-resource")
 
@@ -119,8 +130,8 @@ func validateQuestDBSpec(obj *crdv1beta2.QuestDB) error {
 		return fmt.Errorf("spec.volume.selector and spec.volume.snapshotName are mutually exclusive")
 	}
 	for _, e := range obj.Spec.ExtraEnv {
-		if e.Name == crdv1beta2.EnvPgUser || e.Name == crdv1beta2.EnvPgPassword {
-			return fmt.Errorf("spec.extraEnv may not set %q; pg-wire credentials are managed by the operator via spec.auth", e.Name)
+		if key, ok := reservedEnvKeys[e.Name]; ok {
+			return fmt.Errorf("spec.extraEnv may not set %q; it overrides operator-managed config key %q", e.Name, key)
 		}
 	}
 	if key, ok := overridesReservedConfig(obj.Spec.Config.ServerConfig); ok {
