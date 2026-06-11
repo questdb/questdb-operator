@@ -32,12 +32,15 @@ import (
 // questdbNamespace is where the QuestDB custom resources are created during e2e.
 const questdbNamespace = "questdb-e2e"
 
-// kubectlApply applies a manifest passed on stdin.
+// kubectlApply applies a manifest passed on stdin, retrying to absorb the brief window after deploy
+// where the mutating/validating webhook endpoint is not yet accepting connections.
 func kubectlApply(manifest string) {
-	cmd := exec.Command("kubectl", "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(manifest)
-	_, err := utils.Run(cmd)
-	Expect(err).NotTo(HaveOccurred(), "failed to apply manifest")
+	Eventually(func(g Gomega) {
+		cmd := exec.Command("kubectl", "apply", "-f", "-")
+		cmd.Stdin = strings.NewReader(manifest)
+		_, err := utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred())
+	}, 2*time.Minute, 3*time.Second).Should(Succeed(), "failed to apply manifest")
 }
 
 // This suite exercises the operator end-to-end against a real (Kind) cluster: it deploys the
@@ -50,6 +53,22 @@ var _ = Describe("QuestDB", Ordered, func() {
 		By("deploying the controller-manager")
 		_, err := utils.Run(exec.Command("make", "deploy", "IMG="+managerImage))
 		Expect(err).NotTo(HaveOccurred(), "failed to deploy the controller-manager")
+
+		By("waiting for the controller-manager deployment to be available")
+		Eventually(func(g Gomega) {
+			out, err := utils.Run(exec.Command("kubectl", "wait", "--for=condition=Available",
+				"deployment", "-l", "control-plane=controller-manager", "-n", namespace, "--timeout=30s"))
+			g.Expect(err).NotTo(HaveOccurred(), out)
+		}, 3*time.Minute, 5*time.Second).Should(Succeed())
+
+		By("waiting for the webhook service endpoints to be ready")
+		Eventually(func(g Gomega) {
+			out, err := utils.Run(exec.Command("kubectl", "get", "endpointslices.discovery.k8s.io", "-n", namespace,
+				"-l", "kubernetes.io/service-name=questdb-operator-webhook-service",
+				"-o", "jsonpath={range .items[*]}{range .endpoints[*]}{.addresses[*]}{end}{end}"))
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(out).ShouldNot(BeEmpty(), "webhook endpoints not yet ready")
+		}, 3*time.Minute, 2*time.Second).Should(Succeed())
 
 		By("creating the QuestDB test namespace")
 		_, _ = utils.Run(exec.Command("kubectl", "create", "ns", questdbNamespace))
